@@ -1,0 +1,9 @@
+ALTER TABLE users DROP COLUMN IF EXISTS business_id;
+ALTER TABLE products DROP COLUMN IF EXISTS business_id;
+ALTER TABLE customers DROP COLUMN IF EXISTS business_id;
+ALTER TABLE orders DROP COLUMN IF EXISTS business_id;
+ALTER TABLE media_folders DROP COLUMN IF EXISTS business_id;
+ALTER TABLE media_assets DROP COLUMN IF EXISTS business_id;
+ALTER TABLE slider_posters DROP COLUMN IF EXISTS business_id;
+ALTER TABLE audit_logs DROP COLUMN IF EXISTS business_id;
+ALTER TABLE roles DROP COLUMN IF EXISTS business_id;

@@ -1,0 +1,11 @@
+# Reference-only assets not part of the shipped app — kept locally, not pushed.
+/img/
+/Google Stitch/
+*.pdf
+
+# Claude Code session-local config.
+/.claude/
+
+# OS/editor cruft.
+.DS_Store
+Thumbs.db
