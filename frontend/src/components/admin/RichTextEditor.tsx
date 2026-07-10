@@ -14,7 +14,17 @@ interface RichTextEditorProps {
   onChange: (html: string) => void;
 }
 
-const COLOR_SWATCHES = ["#111827", "#b80049", "#2563eb", "#16a34a", "#92400e"];
+// The brand swatch reads the live configured accent (SettingsContext writes
+// it onto :root) rather than a hardcoded hex, so tenant branding carries
+// into the description editor too. Resolved lazily because the saved HTML
+// needs a concrete color value, not a var() reference.
+function colorSwatches(): string[] {
+  const brand =
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-brand-accent")
+      .trim() || "#b80049";
+  return ["#111827", brand, "#2563eb", "#16a34a", "#92400e"];
+}
 
 /**
  * Minimal WYSIWYG editor for product descriptions — a contentEditable
@@ -118,7 +128,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
           <LinkIcon size={16} />
         </button>
         <span className="mx-1 h-5 w-px bg-line" />
-        {COLOR_SWATCHES.map((hex) => (
+        {colorSwatches().map((hex) => (
           <button
             key={hex}
             type="button"

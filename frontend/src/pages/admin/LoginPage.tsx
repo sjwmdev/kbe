@@ -89,12 +89,13 @@ export function LoginPage() {
           form panel: this is the one screen every admin sees before any
           personal theme preference loads. Colors follow the app's own
           conventions rather than a big saturated brand surface: a near-black
-          wine background (the brand hue at dark-mode depth, matching the
-          .dark palette in index.css), white text/icons (the dark-surface
-          icon rule), and brand-accent kept to small glow accents — the same
-          "accent, never a wall of color" restraint used across the app.
-          Hidden on mobile since only the form matters on a small screen. */}
-      <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-[#1c0511] p-12 text-white lg:flex">
+          background mixed from the configured brand accent (11% via
+          color-mix, so it follows tenant branding instead of hardcoding one
+          hue), white text/icons (the dark-surface icon rule), and
+          brand-accent kept to small glow accents — the same "accent, never
+          a wall of color" restraint used across the app. Hidden on mobile
+          since only the form matters on a small screen. */}
+      <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-[color-mix(in_srgb,var(--color-brand-accent)_11%,#0a060a)] p-12 text-white lg:flex">
         <div
           aria-hidden
           className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-brand-accent/25 blur-3xl"

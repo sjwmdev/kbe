@@ -44,7 +44,7 @@ export function TopProgressBar() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[300] h-0.5">
       <div
-        className="h-full bg-brand-accent shadow-[0_0_8px_rgba(184,0,73,0.6)] transition-[width,opacity] duration-300 ease-out"
+        className="h-full bg-brand-accent shadow-[0_0_8px_color-mix(in_srgb,var(--color-brand-accent)_60%,transparent)] transition-[width,opacity] duration-300 ease-out"
         style={{ width: `${progress}%`, opacity: progress === 100 ? 0 : 1 }}
       />
     </div>

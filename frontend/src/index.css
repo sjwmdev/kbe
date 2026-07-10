@@ -27,11 +27,14 @@
   --color-brand-accent-dark: #8f003d;
 
   /* Default color for standalone/decorative icons (dashboard stats, nav
-     icons, trust badges, etc.) — brand-accent in light mode, forced to
-     solid white in dark mode below. Icons with their own established
-     meaning (active nav state, like/heart, warnings, delete) don't use
-     this token and are colored explicitly at their call site instead. */
-  --color-icon: #b80049;
+     icons, trust badges, etc.) — follows brand-accent in light mode, forced
+     to solid white in dark mode below. Defined as a var reference, not a
+     literal, so the runtime brand override from site settings (see
+     SettingsContext) automatically recolors every icon too. Icons with
+     their own established meaning (active nav state, like/heart, warnings,
+     delete) don't use this token and are colored explicitly at their call
+     site instead. */
+  --color-icon: var(--color-brand-accent);
 
   /* Card elevation: a barely-there two-layer shadow that adds depth to
      surface cards/tables without looking heavy. Usable as `shadow-card`. */
