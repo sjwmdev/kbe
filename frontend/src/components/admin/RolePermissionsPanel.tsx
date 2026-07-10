@@ -17,6 +17,7 @@ const MODULE_LABELS: Record<string, string> = {
   products: "Bidhaa",
   categories: "Kategoria",
   orders: "Oda",
+  notifications: "Arifa",
   media: "Vyombo vya Habari",
   pages: "Kurasa Tuli",
   sliders: "Slaidi",
@@ -31,12 +32,22 @@ const ACTION_LABELS: Record<string, string> = {
   edit: "Hariri",
   delete: "Futa",
   upload: "Pakia",
+  manage: "Simamia",
+  restore: "Rejesha",
+  forceDelete: "Futa Kabisa",
+  resetPassword: "Weka Upya Nenosiri",
 };
 
+// Preferred display order. Modules the API returns that aren't listed here
+// still render (appended alphabetically, raw key as the label) — the
+// catalog in the backend is the source of truth, and a missing entry here
+// must never silently hide a module's permissions (that's exactly how the
+// notifications group went missing).
 const MODULE_ORDER = [
   "products",
   "categories",
   "orders",
+  "notifications",
   "media",
   "pages",
   "sliders",
@@ -104,7 +115,12 @@ export function RolePermissionsPanel({
     (acc[p.module] ??= []).push(p);
     return acc;
   }, {});
-  const modules = MODULE_ORDER.filter((m) => grouped[m]?.length);
+  const modules = [
+    ...MODULE_ORDER.filter((m) => grouped[m]?.length),
+    ...Object.keys(grouped)
+      .filter((m) => !MODULE_ORDER.includes(m))
+      .sort(),
+  ];
 
   function toggleModule(moduleKey: string) {
     setExpanded((prev) => {

@@ -20,15 +20,17 @@ func NewUserHandler(users *usecase.UserUsecase) *UserHandler {
 }
 
 type userDTO struct {
-	ID                 string    `json:"id"`
-	Username           string    `json:"username"`
-	Name               string    `json:"name"`
-	Email              string    `json:"email"`
-	RoleID             *string   `json:"role_id,omitempty"`
-	RoleName           string    `json:"role_name"`
-	IsActive           bool      `json:"is_active"`
-	MustChangePassword bool      `json:"must_change_password"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                          string    `json:"id"`
+	Username                    string    `json:"username"`
+	Name                        string    `json:"name"`
+	Email                       string    `json:"email"`
+	Phone                       string    `json:"phone"`
+	DefaultCommunicationChannel string    `json:"default_communication_channel"`
+	RoleID                      *string   `json:"role_id,omitempty"`
+	RoleName                    string    `json:"role_name"`
+	IsActive                    bool      `json:"is_active"`
+	MustChangePassword          bool      `json:"must_change_password"`
+	CreatedAt                   time.Time `json:"created_at"`
 }
 
 func toUserDTO(u domain.User) userDTO {
@@ -39,15 +41,17 @@ func toUserDTO(u domain.User) userDTO {
 	}
 
 	return userDTO{
-		ID:                 u.ID.String(),
-		Username:           u.Username,
-		Name:               u.Name,
-		Email:              u.Email,
-		RoleID:             roleID,
-		RoleName:           u.RoleName,
-		IsActive:           u.IsActive,
-		MustChangePassword: u.MustChangePassword,
-		CreatedAt:          u.CreatedAt,
+		ID:                          u.ID.String(),
+		Username:                    u.Username,
+		Name:                        u.Name,
+		Email:                       u.Email,
+		Phone:                       u.Phone,
+		DefaultCommunicationChannel: u.DefaultCommunicationChannel,
+		RoleID:                      roleID,
+		RoleName:                    u.RoleName,
+		IsActive:                    u.IsActive,
+		MustChangePassword:          u.MustChangePassword,
+		CreatedAt:                   u.CreatedAt,
 	}
 }
 
@@ -168,6 +172,35 @@ type setActiveRequest struct {
 }
 
 // SetActive handles PUT /api/v1/admin/users/{id}/active (protected).
+// ResetPassword handles POST /api/v1/admin/users/{id}/reset-password
+// (protected, users.resetPassword). Like CreateUser, the generated
+// temporary password appears in this response exactly once and is never
+// retrievable again. The route runs through the standard mutation audit
+// middleware, so every reset is logged with the acting admin.
+func (h *UserHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing or malformed authorization header")
+		return
+	}
+
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	user, password, err := h.users.ResetPassword(r.Context(), claims.BusinessID, claims.UserID, id)
+	if handleUsecaseError(w, err) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, createUserResponse{
+		User:              toUserDTO(*user),
+		TemporaryPassword: password,
+	})
+}
+
 func (h *UserHandler) SetActive(w http.ResponseWriter, r *http.Request) {
 	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {

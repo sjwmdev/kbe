@@ -51,37 +51,41 @@ func main() {
 	orderRepo := repository.NewOrderRepository(pool)
 	businessRepo := repository.NewBusinessRepository(pool)
 	categoryRepo := repository.NewCategoryRepository(pool)
+	notificationRepo := repository.NewNotificationRepository(pool)
 
-	authUsecase := usecase.NewAuthUsecase(userRepo)
+	notificationUsecase := usecase.NewNotificationUsecase(notificationRepo)
+	authUsecase := usecase.NewAuthUsecase(userRepo, notificationUsecase)
 	productUsecase := usecase.NewProductUsecase(productRepo, imageRepo, likeRepo, categoryRepo)
 	categoryUsecase := usecase.NewCategoryUsecase(categoryRepo)
 	contentUsecase := usecase.NewContentUsecase(settingsRepo, staticPageRepo, sliderPosterRepo)
 	roleUsecase := usecase.NewRoleUsecase(roleRepo, permissionRepo)
-	userUsecase := usecase.NewUserUsecase(userRepo, roleRepo)
+	userUsecase := usecase.NewUserUsecase(userRepo, roleRepo, notificationUsecase)
 	mediaUsecase := usecase.NewMediaUsecase(mediaRepo)
 	auditLogUsecase := usecase.NewAuditLogUsecase(auditLogRepo)
-	orderUsecase := usecase.NewOrderUsecase(orderRepo, customerRepo, productRepo)
+	orderUsecase := usecase.NewOrderUsecase(orderRepo, customerRepo, productRepo, notificationUsecase)
 	businessUsecase := usecase.NewBusinessUsecase(businessRepo)
 
 	tokenManager := delivery.NewTokenManager(jwtSecret, 24*time.Hour)
 
 	router := delivery.NewRouter(delivery.RouterDeps{
-		ProductHandler:   delivery.NewProductHandler(productUsecase, roleUsecase, businessUsecase, defaultBusinessSlug),
-		AuthHandler:      delivery.NewAuthHandler(authUsecase, roleUsecase, auditLogUsecase, tokenManager),
-		UploadHandler:    delivery.NewUploadHandler(productUsecase, mediaUsecase, uploadsDir, "/uploads"),
-		ContentHandler:   delivery.NewContentHandler(contentUsecase, mediaUsecase, businessUsecase, defaultBusinessSlug, uploadsDir, "/uploads"),
-		RoleHandler:      delivery.NewRoleHandler(roleUsecase),
-		UserHandler:      delivery.NewUserHandler(userUsecase),
-		MediaHandler:     delivery.NewMediaHandler(mediaUsecase, uploadsDir, "/uploads"),
-		AuditLogHandler:  delivery.NewAuditLogHandler(auditLogUsecase),
-		OrderHandler:     delivery.NewOrderHandler(orderUsecase, roleUsecase),
-		DashboardHandler: delivery.NewDashboardHandler(orderUsecase, roleUsecase),
-		CategoryHandler:  delivery.NewCategoryHandler(categoryUsecase, businessUsecase, defaultBusinessSlug),
-		RoleUsecase:      roleUsecase,
-		AuditLogUsecase:  auditLogUsecase,
-		TokenManager:     tokenManager,
-		UploadsDir:       uploadsDir,
-		AllowedOrigin:    allowedOrigin,
+		ProductHandler:      delivery.NewProductHandler(productUsecase, orderUsecase, roleUsecase, businessUsecase, defaultBusinessSlug),
+		AuthHandler:         delivery.NewAuthHandler(authUsecase, roleUsecase, auditLogUsecase, tokenManager),
+		UploadHandler:       delivery.NewUploadHandler(productUsecase, mediaUsecase, uploadsDir, "/uploads"),
+		ContentHandler:      delivery.NewContentHandler(contentUsecase, mediaUsecase, businessUsecase, defaultBusinessSlug, uploadsDir, "/uploads"),
+		RoleHandler:         delivery.NewRoleHandler(roleUsecase),
+		UserHandler:         delivery.NewUserHandler(userUsecase),
+		MediaHandler:        delivery.NewMediaHandler(mediaUsecase, uploadsDir, "/uploads"),
+		AuditLogHandler:     delivery.NewAuditLogHandler(auditLogUsecase),
+		OrderHandler:        delivery.NewOrderHandler(orderUsecase, roleUsecase),
+		DashboardHandler:    delivery.NewDashboardHandler(orderUsecase, roleUsecase),
+		CategoryHandler:     delivery.NewCategoryHandler(categoryUsecase, businessUsecase, defaultBusinessSlug),
+		NotificationHandler: delivery.NewNotificationHandler(notificationUsecase),
+		TemplateHandler:     delivery.NewMessageTemplateHandler(),
+		RoleUsecase:         roleUsecase,
+		AuditLogUsecase:     auditLogUsecase,
+		TokenManager:        tokenManager,
+		UploadsDir:          uploadsDir,
+		AllowedOrigin:       allowedOrigin,
 	})
 
 	server := &http.Server{

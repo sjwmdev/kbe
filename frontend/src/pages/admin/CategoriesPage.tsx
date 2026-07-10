@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useConfirm } from "../../context/ConfirmContext";
@@ -14,6 +14,7 @@ import {
 import type { CategoryInput } from "../../lib/api";
 import type { Category } from "../../types/product";
 import { Skeleton } from "../../components/Skeleton";
+import { ActionMenu, type ActionMenuItem } from "../../components/admin/ActionMenu";
 
 function slugify(value: string): string {
   return value
@@ -257,7 +258,7 @@ export function CategoriesPage() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-line">
+      <div className="overflow-hidden rounded-2xl border border-line shadow-card">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-hover text-ink-muted">
             <tr>
@@ -296,29 +297,22 @@ export function CategoriesPage() {
                     {category.display_order}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {hasPermission("categories.edit") && (
-                        <button
-                          type="button"
-                          onClick={() => setPanelCategory(category)}
-                          aria-label="Hariri"
-                          className="text-ink-muted hover:text-brand-accent"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                      )}
-                      {hasPermission("categories.delete") && (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(category)}
-                          disabled={deletingId === category.id}
-                          aria-label="Futa"
-                          className="text-ink-muted hover:text-brand-accent disabled:opacity-30"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
+                    <ActionMenu
+                      items={(
+                        [
+                          hasPermission("categories.edit") && {
+                            label: "Hariri",
+                            onClick: () => setPanelCategory(category),
+                          },
+                          hasPermission("categories.delete") && {
+                            label: "Futa",
+                            onClick: () => void handleDelete(category),
+                            disabled: deletingId === category.id,
+                            danger: true,
+                          },
+                        ] as (ActionMenuItem | false)[]
+                      ).filter((item): item is ActionMenuItem => Boolean(item))}
+                    />
                   </td>
                 </tr>
               ))}

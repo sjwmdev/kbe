@@ -15,13 +15,14 @@ import (
 
 type ProductHandler struct {
 	products            *usecase.ProductUsecase
+	orders              *usecase.OrderUsecase
 	roles               *usecase.RoleUsecase
 	businesses          *usecase.BusinessUsecase
 	defaultBusinessSlug string
 }
 
-func NewProductHandler(products *usecase.ProductUsecase, roles *usecase.RoleUsecase, businesses *usecase.BusinessUsecase, defaultBusinessSlug string) *ProductHandler {
-	return &ProductHandler{products: products, roles: roles, businesses: businesses, defaultBusinessSlug: defaultBusinessSlug}
+func NewProductHandler(products *usecase.ProductUsecase, orders *usecase.OrderUsecase, roles *usecase.RoleUsecase, businesses *usecase.BusinessUsecase, defaultBusinessSlug string) *ProductHandler {
+	return &ProductHandler{products: products, orders: orders, roles: roles, businesses: businesses, defaultBusinessSlug: defaultBusinessSlug}
 }
 
 // isSuperAdmin resolves the caller's role from their JWT's RoleID.
@@ -49,6 +50,7 @@ type productDTO struct {
 	StockQuantity     int               `json:"stock_quantity"`
 	LowStockThreshold int               `json:"low_stock_threshold"`
 	StockStatus       string            `json:"stock_status"`
+	Colors            []string          `json:"colors"`
 	LikeCount         int               `json:"like_count"`
 	Images            []productImageDTO `json:"images"`
 	CreatedAt         time.Time         `json:"created_at"`
@@ -65,6 +67,9 @@ func toProductDTO(p domain.Product) productDTO {
 		})
 	}
 
+	colors := make([]string, 0, len(p.Colors))
+	colors = append(colors, p.Colors...)
+
 	return productDTO{
 		ID:                p.ID.String(),
 		Name:              p.Name,
@@ -76,6 +81,7 @@ func toProductDTO(p domain.Product) productDTO {
 		StockQuantity:     p.StockQuantity,
 		LowStockThreshold: p.LowStockThreshold,
 		StockStatus:       p.StockStatus(),
+		Colors:            colors,
 		LikeCount:         p.LikeCount,
 		Images:            images,
 		CreatedAt:         p.CreatedAt,
@@ -84,8 +90,8 @@ func toProductDTO(p domain.Product) productDTO {
 }
 
 // List handles GET /api/v1/products — the public, paginated catalog
-// listing. An optional ?category_id= filters server-side to one of the
-// business's own (dynamic, admin-managed) categories.
+// listing. Optional filters: ?category_id= (one of the business's own
+// dynamic categories), ?color=, ?min_price=, ?max_price=.
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	businessID, err := resolvePublicBusinessID(r, h.businesses, h.defaultBusinessSlug)
 	if err != nil {
@@ -93,19 +99,42 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var categoryID *uuid.UUID
+	var filter domain.ProductFilter
 	if raw := r.URL.Query().Get("category_id"); raw != "" {
 		id, err := uuid.Parse(raw)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid category_id")
 			return
 		}
-		categoryID = &id
+		filter.CategoryID = &id
+	}
+	if raw := r.URL.Query().Get("color"); raw != "" {
+		filter.Color = &raw
+	}
+	if raw := r.URL.Query().Get("min_price"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 0 {
+			writeError(w, http.StatusBadRequest, "invalid min_price")
+			return
+		}
+		filter.MinPrice = &v
+	}
+	if raw := r.URL.Query().Get("max_price"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 0 {
+			writeError(w, http.StatusBadRequest, "invalid max_price")
+			return
+		}
+		filter.MaxPrice = &v
+	}
+	if filter.MinPrice != nil && filter.MaxPrice != nil && *filter.MinPrice > *filter.MaxPrice {
+		writeError(w, http.StatusBadRequest, "min_price must not be greater than max_price")
+		return
 	}
 
 	page, pageSize := parsePagination(r)
 
-	products, total, err := h.products.ListActive(r.Context(), businessID, categoryID, page, pageSize)
+	products, total, err := h.products.ListActive(r.Context(), businessID, filter, page, pageSize)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to fetch products")
 		return
@@ -203,6 +232,56 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toProductDTO(*product))
 }
 
+type productOrderSummaryDTO struct {
+	OrderCount int     `json:"order_count"`
+	UnitsSold  int     `json:"units_sold"`
+	Revenue    float64 `json:"revenue"`
+}
+
+type productDetailDTO struct {
+	productDTO
+	CreatedByName string                 `json:"created_by_name"`
+	OrderSummary  productOrderSummaryDTO `json:"order_summary"`
+}
+
+// GetAdminDetail handles GET /api/v1/admin/products/{id} (protected) — the
+// read-only product details page. Permission-protected same as the rest of
+// /admin/products; ownership-scoped the same way as Update/Delete.
+func (h *ProductHandler) GetAdminDetail(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing or malformed authorization header")
+		return
+	}
+
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid product id")
+		return
+	}
+
+	product, err := h.products.GetAdminDetail(r.Context(), id, claims.BusinessID, claims.UserID, h.isSuperAdmin(r, claims))
+	if handleUsecaseError(w, err) {
+		return
+	}
+
+	summary, err := h.orders.ProductSummary(r.Context(), claims.BusinessID, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load order summary")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, productDetailDTO{
+		productDTO:    toProductDTO(*product),
+		CreatedByName: product.CreatedByName,
+		OrderSummary: productOrderSummaryDTO{
+			OrderCount: summary.OrderCount,
+			UnitsSold:  summary.UnitsSold,
+			Revenue:    summary.Revenue,
+		},
+	})
+}
+
 // Like handles POST /api/v1/products/{id}/like.
 func (h *ProductHandler) Like(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -219,14 +298,31 @@ func (h *ProductHandler) Like(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"like_count": count})
 }
 
+// Unlike handles DELETE /api/v1/products/{id}/like.
+func (h *ProductHandler) Unlike(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid product id")
+		return
+	}
+
+	count, err := h.products.Unlike(r.Context(), id)
+	if handleUsecaseError(w, err) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{"like_count": count})
+}
+
 type productRequest struct {
-	Name              string  `json:"name"`
-	Description       string  `json:"description"`
-	Price             float64 `json:"price"`
-	CategoryID        string  `json:"category_id"`
-	IsActive          *bool   `json:"is_active"`
-	StockQuantity     int     `json:"stock_quantity"`
-	LowStockThreshold int     `json:"low_stock_threshold"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description"`
+	Price             float64  `json:"price"`
+	CategoryID        string   `json:"category_id"`
+	IsActive          *bool    `json:"is_active"`
+	StockQuantity     int      `json:"stock_quantity"`
+	LowStockThreshold int      `json:"low_stock_threshold"`
+	Colors            []string `json:"colors"`
 }
 
 func (req productRequest) toInput() usecase.ProductInput {
@@ -248,6 +344,7 @@ func (req productRequest) toInput() usecase.ProductInput {
 		IsActive:          isActive,
 		StockQuantity:     req.StockQuantity,
 		LowStockThreshold: req.LowStockThreshold,
+		Colors:            req.Colors,
 	}
 }
 
@@ -323,6 +420,51 @@ func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Restore handles PUT /api/v1/admin/products/{id}/restore (protected) —
+// reverses a soft delete/hide.
+func (h *ProductHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing or malformed authorization header")
+		return
+	}
+
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid product id")
+		return
+	}
+
+	if err := h.products.Restore(r.Context(), id, claims.BusinessID, claims.UserID, h.isSuperAdmin(r, claims)); handleUsecaseError(w, err) {
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ForceDelete handles DELETE /api/v1/admin/products/{id}/force (protected) —
+// permanently removes the product row. Blocked with domain.ErrProductInUse
+// if the product has order history.
+func (h *ProductHandler) ForceDelete(w http.ResponseWriter, r *http.Request) {
+	claims, ok := ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing or malformed authorization header")
+		return
+	}
+
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid product id")
+		return
+	}
+
+	if err := h.products.ForceDelete(r.Context(), id, claims.BusinessID, claims.UserID, h.isSuperAdmin(r, claims)); handleUsecaseError(w, err) {
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleUsecaseError writes an appropriate HTTP error response for a usecase
 // error and reports whether the caller should stop handling the request.
 func handleUsecaseError(w http.ResponseWriter, err error) bool {
@@ -337,6 +479,10 @@ func handleUsecaseError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrCategoryInUse):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrProductInUse):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrInsufficientStock):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}

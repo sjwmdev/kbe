@@ -44,15 +44,25 @@ func (r *orderRepository) Create(ctx context.Context, order *domain.Order) (*dom
 		INSERT INTO order_items (order_id, product_id, quantity, unit_price)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id`
-	const decrementStock = `UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2`
+	// The stock_quantity >= $1 guard makes this decrement atomic against
+	// concurrent orders for the same product — the usecase already checked
+	// stock before starting this transaction, but that check-then-act gap is
+	// exactly where two simultaneous orders could otherwise both pass and
+	// both decrement, driving stock negative. If another order wins the
+	// race, this UPDATE affects zero rows and callers see ErrInsufficientStock.
+	const decrementStock = `UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2 AND stock_quantity >= $1`
 
 	for i := range order.Items {
 		item := &order.Items[i]
 		if err := tx.QueryRow(ctx, insertItem, order.ID, item.ProductID, item.Quantity, item.UnitPrice).Scan(&item.ID); err != nil {
 			return nil, fmt.Errorf("repository: insert order item: %w", err)
 		}
-		if _, err := tx.Exec(ctx, decrementStock, item.Quantity, item.ProductID); err != nil {
+		tag, err := tx.Exec(ctx, decrementStock, item.Quantity, item.ProductID)
+		if err != nil {
 			return nil, fmt.Errorf("repository: decrement product stock: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, fmt.Errorf("repository: decrement product stock for %s: %w", item.ProductName, domain.ErrInsufficientStock)
 		}
 	}
 
@@ -329,6 +339,7 @@ func (r *orderRepository) TopProductPerformance(ctx context.Context, businessID 
 			return nil, fmt.Errorf("repository: scan product performance row: %w", err)
 		}
 		perf.StockStatus = domain.Product{StockQuantity: stockQuantity, LowStockThreshold: lowStockThreshold}.StockStatus()
+		perf.StockQuantity = stockQuantity
 		results = append(results, perf)
 	}
 	if err := rows.Err(); err != nil {
@@ -336,4 +347,24 @@ func (r *orderRepository) TopProductPerformance(ctx context.Context, businessID 
 	}
 
 	return results, nil
+}
+
+func (r *orderRepository) ProductOrderSummary(ctx context.Context, businessID, productID uuid.UUID) (domain.ProductOrderSummary, error) {
+	const query = `
+		SELECT
+			COUNT(DISTINCT o.id),
+			COALESCE(SUM(oi.quantity), 0),
+			COALESCE(SUM(oi.quantity * oi.unit_price), 0)
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE o.business_id = $1 AND oi.product_id = $2 AND o.status != 'cancelled'`
+
+	var summary domain.ProductOrderSummary
+	err := r.pool.QueryRow(ctx, query, businessID, productID).
+		Scan(&summary.OrderCount, &summary.UnitsSold, &summary.Revenue)
+	if err != nil {
+		return domain.ProductOrderSummary{}, fmt.Errorf("repository: product order summary: %w", err)
+	}
+
+	return summary, nil
 }

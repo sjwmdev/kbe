@@ -11,8 +11,9 @@ import {
   updateProduct,
 } from "../../lib/api";
 import type { ProductInput } from "../../lib/api";
-import type { Category, Product } from "../../types/product";
+import { PRODUCT_COLORS, type Category, type Product } from "../../types/product";
 import { ProductImageManager } from "../../components/admin/ProductImageManager";
+import { RichTextEditor } from "../../components/admin/RichTextEditor";
 
 const EMPTY_FORM: ProductInput = {
   name: "",
@@ -22,6 +23,7 @@ const EMPTY_FORM: ProductInput = {
   is_active: true,
   stock_quantity: 0,
   low_stock_threshold: 5,
+  colors: [],
 };
 
 export function ProductFormPage() {
@@ -75,6 +77,7 @@ export function ProductFormPage() {
           is_active: data.is_active,
           stock_quantity: data.stock_quantity,
           low_stock_threshold: data.low_stock_threshold,
+          colors: data.colors,
         });
       })
       .catch(() => {
@@ -220,17 +223,48 @@ export function ProductFormPage() {
           </label>
         </div>
 
-        <label className="block">
+        <div className="block">
+          <span className="mb-2 block text-sm text-ink-muted">Rangi</span>
+          <div className="flex flex-wrap gap-2">
+            {PRODUCT_COLORS.map((c) => {
+              const selected = form.colors.includes(c.name);
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      colors: selected
+                        ? f.colors.filter((existing) => existing !== c.name)
+                        : [...f.colors, c.name],
+                    }))
+                  }
+                  aria-pressed={selected}
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    selected
+                      ? "border-brand-accent bg-brand-accent/10 text-brand-accent"
+                      : "border-line text-ink-muted hover:border-brand-accent"
+                  }`}
+                >
+                  <span
+                    className="h-3.5 w-3.5 rounded-full border border-line"
+                    style={{ backgroundColor: c.hex }}
+                  />
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="block">
           <span className="mb-1 block text-sm text-ink-muted">Maelezo</span>
-          <textarea
-            rows={4}
+          <RichTextEditor
             value={form.description}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, description: e.target.value }))
-            }
-            className="w-full rounded-lg border border-line bg-surface-hover px-4 py-3 text-ink outline-none focus:border-brand-accent"
+            onChange={(html) => setForm((f) => ({ ...f, description: html }))}
           />
-        </label>
+        </div>
 
         {isEditMode && (
           <label className="flex items-center gap-3">

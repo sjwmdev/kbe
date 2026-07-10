@@ -13,10 +13,8 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { ApiError, fetchDashboardSummary } from "../../lib/api";
 import type { DashboardSummary } from "../../types/order";
-import { STOCK_STATUS_LABELS, STOCK_STATUS_TONE } from "../../types/product";
 import { formatPrice } from "../../lib/format";
 import { Skeleton } from "../../components/Skeleton";
-import { StatusBadge } from "../../components/StatusBadge";
 
 function TrendIndicator({ pct }: { pct: number | null }) {
   if (pct === null) {
@@ -48,7 +46,7 @@ function KpiCard({
   trendPct: number | null;
 }) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-6">
+    <div className="rounded-xl border border-line bg-surface p-6 shadow-card">
       <div className="mb-4 flex items-center justify-between">
         <span className="text-xs font-bold uppercase tracking-widest text-ink-muted">
           {label}
@@ -107,7 +105,7 @@ export function DashboardPage() {
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-line bg-surface p-6">
+            <div key={i} className="rounded-xl border border-line bg-surface p-6 shadow-card">
               <div className="mb-4 flex items-center justify-between">
                 <Skeleton className="h-3 w-24" />
                 <Skeleton className="h-6 w-6 rounded" />
@@ -119,7 +117,7 @@ export function DashboardPage() {
         </div>
         <div>
           <Skeleton className="mb-4 h-6 w-56" />
-          <div className="overflow-hidden rounded-xl border border-line">
+          <div className="overflow-hidden rounded-xl border border-line shadow-card">
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
@@ -153,74 +151,80 @@ export function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KpiCard
-          label="Mauzo Yote"
-          icon={<Wallet size={22} className="text-icon" />}
-          value={formatPrice(summary.total_sales)}
-          trendPct={summary.total_sales_trend_pct}
-        />
-        <KpiCard
-          label="Oda Zote"
-          icon={<ShoppingCart size={22} className="text-icon" />}
-          value={String(summary.total_orders)}
-          trendPct={summary.total_orders_trend_pct}
-        />
-        <KpiCard
-          label="Wateja Amilifu"
-          icon={<Users size={22} className="text-icon" />}
-          value={String(summary.active_customers)}
-          trendPct={summary.active_customers_trend_pct}
-        />
-      </div>
+      {summary.can_view_orders && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <KpiCard
+            label="Mauzo Yote"
+            icon={<Wallet size={22} className="text-icon" />}
+            value={formatPrice(summary.total_sales)}
+            trendPct={summary.total_sales_trend_pct}
+          />
+          <KpiCard
+            label="Oda Zote"
+            icon={<ShoppingCart size={22} className="text-icon" />}
+            value={String(summary.total_orders)}
+            trendPct={summary.total_orders_trend_pct}
+          />
+          <KpiCard
+            label="Wateja Amilifu"
+            icon={<Users size={22} className="text-icon" />}
+            value={String(summary.active_customers)}
+            trendPct={summary.active_customers_trend_pct}
+          />
+        </div>
+      )}
 
-      <div>
-        <h2 className="mb-4 text-lg font-bold text-ink">
-          Utendaji wa Bidhaa Hivi Karibuni
-        </h2>
+      {summary.can_view_products && (
+        <div>
+          <h2 className="mb-4 text-lg font-bold text-ink">
+            Utendaji wa Bidhaa Hivi Karibuni
+          </h2>
 
-        {summary.product_performance.length === 0 ? (
-          <p className="text-ink-muted">
-            Bado hakuna bidhaa zilizouzwa katika siku 30 zilizopita.
-          </p>
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-line">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-surface-hover text-ink-muted">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Bidhaa</th>
-                  <th className="px-4 py-3 font-semibold">Kundi</th>
-                  <th className="px-4 py-3 font-semibold">Idadi Iliyouzwa</th>
-                  <th className="px-4 py-3 font-semibold">Hali ya Stoo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {summary.product_performance.map((item) => (
-                  <tr key={item.product_id} className="text-ink">
-                    <td className="px-4 py-3 font-medium">
-                      <Link
-                        to={`/admin/products/${item.product_id}/edit`}
-                        className="hover:text-brand-accent"
-                      >
-                        {item.product_name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-ink-muted">
-                      {item.category}
-                    </td>
-                    <td className="px-4 py-3 text-ink-muted">{item.units_sold}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge tone={STOCK_STATUS_TONE[item.stock_status]}>
-                        {STOCK_STATUS_LABELS[item.stock_status]}
-                      </StatusBadge>
-                    </td>
+          {summary.product_performance.length === 0 ? (
+            <p className="text-ink-muted">
+              Bado hakuna bidhaa zilizouzwa katika siku 30 zilizopita.
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-line shadow-card">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-surface-hover text-ink-muted">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Bidhaa</th>
+                    <th className="px-4 py-3 font-semibold">Kundi</th>
+                    <th className="px-4 py-3 font-semibold">Idadi Iliyouzwa</th>
+                    <th className="px-4 py-3 font-semibold">Hali ya Stoo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {summary.product_performance.map((item) => (
+                    <tr key={item.product_id} className="text-ink">
+                      <td className="px-4 py-3 font-medium">
+                        <Link
+                          to={`/admin/products/${item.product_id}/edit`}
+                          className="hover:text-brand-accent"
+                        >
+                          {item.product_name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">
+                        {item.category}
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">{item.units_sold}</td>
+                      <td className="px-4 py-3 text-ink-muted">{item.stock_quantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!summary.can_view_orders && !summary.can_view_products && (
+        <p className="text-ink-muted">
+          Huna ruhusa ya kuona takwimu za biashara. Wasiliana na msimamizi wako.
+        </p>
+      )}
     </div>
   );
 }

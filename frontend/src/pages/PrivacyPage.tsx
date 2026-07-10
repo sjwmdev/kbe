@@ -24,10 +24,7 @@ export function PrivacyPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-      <span className="text-xs font-semibold uppercase tracking-widest text-brand-accent">
-        Sera ya Faragha
-      </span>
-      <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl">
+      <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl">
         {page?.title ?? "Faragha Yako Inatuhusu"}
       </h1>
       <p className="mt-4 text-sm text-ink-muted">

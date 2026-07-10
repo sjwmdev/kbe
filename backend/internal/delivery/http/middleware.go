@@ -66,7 +66,12 @@ func RequirePasswordChanged(next http.Handler) http.Handler {
 // RequirePermission 403s unless the caller's role grants the given permission
 // key. SuperAdmin always passes (see RoleUsecase.GetRolePermissionKeys), so
 // it can never accidentally lock itself out by editing its own permissions.
-func RequirePermission(roles *usecase.RoleUsecase, key string) func(http.Handler) http.Handler {
+// RequirePermission passes when the caller's role holds ANY of the listed
+// permission keys. Nearly every route passes exactly one key; the variadic
+// form exists for routes that legitimately serve two modules at once (e.g.
+// product-image upload, reachable by media librarians and product editors
+// alike).
+func RequirePermission(roles *usecase.RoleUsecase, requiredKeys ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := ClaimsFromContext(r.Context())
@@ -82,9 +87,11 @@ func RequirePermission(roles *usecase.RoleUsecase, key string) func(http.Handler
 			}
 
 			for _, k := range keys {
-				if k == key {
-					next.ServeHTTP(w, r)
-					return
+				for _, required := range requiredKeys {
+					if k == required {
+						next.ServeHTTP(w, r)
+						return
+					}
 				}
 			}
 

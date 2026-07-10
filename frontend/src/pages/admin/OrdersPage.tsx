@@ -133,7 +133,7 @@ export function OrdersPage() {
       )}
 
       {(loading || orders.length > 0) && (
-        <div className="overflow-hidden rounded-2xl border border-line">
+        <div className="overflow-hidden rounded-2xl border border-line shadow-card">
           <table className="w-full text-left text-sm">
             <thead className="bg-surface-hover text-ink-muted">
               <tr>

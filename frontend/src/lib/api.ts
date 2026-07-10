@@ -1,14 +1,21 @@
-import type { Category, Product } from "../types/product";
+import type { Category, Product, ProductDetail } from "../types/product";
 import type {
   SiteSettings,
   StaticPage,
   StaticPageSlug,
   SliderPoster,
 } from "../types/content";
-import type { Role, Permission, AdminUser } from "../types/rbac";
+import type {
+  Role,
+  Permission,
+  AdminUser,
+  CommunicationChannel,
+} from "../types/rbac";
 import type { MediaFolder, MediaAsset } from "../types/media";
 import type { AuditLog } from "../types/audit";
 import type { DashboardSummary, Order, OrderStatus } from "../types/order";
+import type { Notification, NotificationFilter } from "../types/notification";
+import type { MessageTemplate } from "../types/template";
 
 export const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
@@ -144,8 +151,15 @@ function uploadWithProgress<T>(
   });
 }
 
+export interface ProductFilter {
+  categoryId?: string;
+  color?: string;
+  minPrice?: number;
+  maxPrice?: number;
+}
+
 export function fetchProducts(
-  categoryId?: string,
+  filter: ProductFilter = {},
   page = 1,
   pageSize = 24,
 ): Promise<PaginatedProducts> {
@@ -153,7 +167,10 @@ export function fetchProducts(
     page: String(page),
     page_size: String(pageSize),
   });
-  if (categoryId) params.set("category_id", categoryId);
+  if (filter.categoryId) params.set("category_id", filter.categoryId);
+  if (filter.color) params.set("color", filter.color);
+  if (filter.minPrice != null) params.set("min_price", String(filter.minPrice));
+  if (filter.maxPrice != null) params.set("max_price", String(filter.maxPrice));
   return request<PaginatedProducts>(`/api/v1/products?${params.toString()}`);
 }
 
@@ -180,8 +197,22 @@ export function fetchAdminProducts(
   );
 }
 
+/** Read-only admin product details page — includes order history summary. */
+export function fetchAdminProductDetail(
+  token: string,
+  id: string,
+): Promise<ProductDetail> {
+  return request(`/api/v1/admin/products/${id}`, {
+    headers: authHeaders(token),
+  });
+}
+
 export function likeProduct(id: string): Promise<{ like_count: number }> {
   return request(`/api/v1/products/${id}/like`, { method: "POST" });
+}
+
+export function unlikeProduct(id: string): Promise<{ like_count: number }> {
+  return request(`/api/v1/products/${id}/like`, { method: "DELETE" });
 }
 
 export interface SessionResponse {
@@ -206,6 +237,8 @@ export interface AdminProfile {
   username: string;
   name: string;
   email: string;
+  phone: string;
+  default_communication_channel: CommunicationChannel;
   role: string;
   permissions: string[];
   must_change_password: boolean;
@@ -219,12 +252,41 @@ export function fetchProfile(token: string): Promise<AdminProfile> {
 
 export function updateProfile(
   token: string,
-  input: { name: string; email: string },
+  input: {
+    name: string;
+    email: string;
+    phone: string;
+    default_communication_channel: CommunicationChannel;
+  },
 ): Promise<AdminProfile> {
   return request("/api/v1/admin/me", {
     method: "PUT",
     headers: authHeaders(token),
     body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Anonymous forgot-password submission — creates a dashboard notification
+ * for the admins instead of emailing a reset link. The response is the same
+ * whether or not the identifier matched an account (anti-enumeration).
+ */
+export function requestPasswordReset(
+  identifier: string,
+): Promise<{ message: string }> {
+  return request("/api/v1/admin/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ identifier }),
+  });
+}
+
+export function resetUserPassword(
+  token: string,
+  id: string,
+): Promise<{ user: AdminUser; temporary_password: string }> {
+  return request(`/api/v1/admin/users/${id}/reset-password`, {
+    method: "POST",
+    headers: authHeaders(token),
   });
 }
 
@@ -247,6 +309,7 @@ export interface ProductInput {
   is_active: boolean;
   stock_quantity: number;
   low_stock_threshold: number;
+  colors: string[];
 }
 
 export function createProduct(
@@ -274,6 +337,25 @@ export function updateProduct(
 
 export function deleteProduct(token: string, id: string): Promise<void> {
   return request(`/api/v1/admin/products/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
+/** Reverses a soft delete/hide (is_active -> true). */
+export function restoreProduct(token: string, id: string): Promise<void> {
+  return request(`/api/v1/admin/products/${id}/restore`, {
+    method: "PUT",
+    headers: authHeaders(token),
+  });
+}
+
+/**
+ * Permanently deletes the product row. Rejects with an ApiError (400) if
+ * the product still has order history — see domain.ErrProductInUse.
+ */
+export function forceDeleteProduct(token: string, id: string): Promise<void> {
+  return request(`/api/v1/admin/products/${id}/force`, {
     method: "DELETE",
     headers: authHeaders(token),
   });
@@ -771,6 +853,73 @@ export function updateOrderStatus(
 
 export function fetchDashboardSummary(token: string): Promise<DashboardSummary> {
   return request("/api/v1/admin/dashboard/summary", {
+    headers: authHeaders(token),
+  });
+}
+
+// --- Notifications ---
+
+export interface PaginatedNotifications {
+  notifications: Notification[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export function fetchNotifications(
+  token: string,
+  page = 1,
+  pageSize = 20,
+  filter: NotificationFilter = {},
+): Promise<PaginatedNotifications> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  if (filter.category) params.set("category", filter.category);
+  if (filter.read !== undefined) params.set("read", String(filter.read));
+  if (filter.resolved !== undefined) params.set("resolved", String(filter.resolved));
+
+  return request(`/api/v1/admin/notifications?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export function deleteNotification(token: string, id: string): Promise<void> {
+  return request(`/api/v1/admin/notifications/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
+// --- Message templates ---
+
+export function fetchMessageTemplates(
+  token: string,
+): Promise<MessageTemplate[]> {
+  return request("/api/v1/admin/message-templates", {
+    headers: authHeaders(token),
+  });
+}
+
+export function fetchUnreadNotificationCount(
+  token: string,
+): Promise<{ unread_count: number }> {
+  return request("/api/v1/admin/notifications/unread-count", {
+    headers: authHeaders(token),
+  });
+}
+
+export function markNotificationRead(token: string, id: string): Promise<void> {
+  return request(`/api/v1/admin/notifications/${id}/read`, {
+    method: "PUT",
+    headers: authHeaders(token),
+  });
+}
+
+export function clearNotifications(token: string): Promise<void> {
+  return request("/api/v1/admin/notifications", {
+    method: "DELETE",
     headers: authHeaders(token),
   });
 }

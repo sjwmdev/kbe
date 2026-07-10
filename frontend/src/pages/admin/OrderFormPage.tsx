@@ -180,8 +180,14 @@ export function OrderFormPage() {
                     Chagua bidhaa...
                   </option>
                   {products.map((p) => (
-                    <option key={p.id} value={p.id} className="bg-surface">
-                      {p.name} ({formatPrice(p.price)}) — Stoo: {p.stock_quantity}
+                    <option
+                      key={p.id}
+                      value={p.id}
+                      disabled={p.stock_quantity <= 0}
+                      className="bg-surface"
+                    >
+                      {p.name} ({formatPrice(p.price)}) — Stoo:{" "}
+                      {p.stock_quantity <= 0 ? "Imeisha" : p.stock_quantity}
                     </option>
                   ))}
                 </select>

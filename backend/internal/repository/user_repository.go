@@ -22,13 +22,13 @@ func NewUserRepository(pool *pgxpool.Pool) domain.UserRepository {
 }
 
 const userColumns = `
-	id, business_id, username, name, email, password_hash, role_id, is_active,
+	id, business_id, username, name, email, phone, default_communication_channel, password_hash, role_id, is_active,
 	must_change_password, failed_login_attempts, locked_until, created_at, updated_at`
 
 func scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
 	err := row.Scan(
-		&u.ID, &u.BusinessID, &u.Username, &u.Name, &u.Email, &u.PasswordHash, &u.RoleID, &u.IsActive,
+		&u.ID, &u.BusinessID, &u.Username, &u.Name, &u.Email, &u.Phone, &u.DefaultCommunicationChannel, &u.PasswordHash, &u.RoleID, &u.IsActive,
 		&u.MustChangePassword, &u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -50,6 +50,16 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*domain
 	return u, nil
 }
 
+func (r *userRepository) FindByUsername(ctx context.Context, username string) (*domain.User, error) {
+	query := fmt.Sprintf(`SELECT %s FROM users WHERE username = $1`, userColumns)
+
+	u, err := scanUser(r.pool.QueryRow(ctx, query, username))
+	if err != nil {
+		return nil, fmt.Errorf("repository: find user by username: %w", err)
+	}
+	return u, nil
+}
+
 func (r *userRepository) FindByID(ctx context.Context, id, businessID uuid.UUID) (*domain.User, error) {
 	query := fmt.Sprintf(`SELECT %s FROM users WHERE id = $1 AND business_id = $2`, userColumns)
 
@@ -63,7 +73,7 @@ func (r *userRepository) FindByID(ctx context.Context, id, businessID uuid.UUID)
 func (r *userRepository) FindAll(ctx context.Context, businessID uuid.UUID) ([]domain.User, error) {
 	const query = `
 		SELECT
-			u.id, u.business_id, u.username, u.name, u.email, u.password_hash, u.role_id, u.is_active,
+			u.id, u.business_id, u.username, u.name, u.email, u.phone, u.default_communication_channel, u.password_hash, u.role_id, u.is_active,
 			u.must_change_password, u.failed_login_attempts, u.locked_until, u.created_at, u.updated_at,
 			COALESCE(r.name, '')
 		FROM users u
@@ -81,7 +91,7 @@ func (r *userRepository) FindAll(ctx context.Context, businessID uuid.UUID) ([]d
 	for rows.Next() {
 		var u domain.User
 		if err := rows.Scan(
-			&u.ID, &u.BusinessID, &u.Username, &u.Name, &u.Email, &u.PasswordHash, &u.RoleID, &u.IsActive,
+			&u.ID, &u.BusinessID, &u.Username, &u.Name, &u.Email, &u.Phone, &u.DefaultCommunicationChannel, &u.PasswordHash, &u.RoleID, &u.IsActive,
 			&u.MustChangePassword, &u.FailedLoginAttempts, &u.LockedUntil, &u.CreatedAt, &u.UpdatedAt,
 			&u.RoleName,
 		); err != nil {
@@ -125,11 +135,11 @@ func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
 func (r *userRepository) UpdateProfile(ctx context.Context, user *domain.User) error {
 	const query = `
 		UPDATE users
-		SET name = $1, email = $2, updated_at = now()
-		WHERE id = $3
+		SET name = $1, email = $2, phone = $3, default_communication_channel = $4, updated_at = now()
+		WHERE id = $5
 		RETURNING updated_at`
 
-	err := r.pool.QueryRow(ctx, query, user.Name, user.Email, user.ID).Scan(&user.UpdatedAt)
+	err := r.pool.QueryRow(ctx, query, user.Name, user.Email, user.Phone, user.DefaultCommunicationChannel, user.ID).Scan(&user.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("repository: update user profile: %w", domain.ErrNotFound)
 	}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useConfirm } from "../../context/ConfirmContext";
@@ -7,6 +7,7 @@ import { ApiError, deleteRole, fetchRoles } from "../../lib/api";
 import type { Role } from "../../types/rbac";
 import { Skeleton } from "../../components/Skeleton";
 import { RolePermissionsPanel } from "../../components/admin/RolePermissionsPanel";
+import { ActionMenu, type ActionMenuItem } from "../../components/admin/ActionMenu";
 
 export function RolesPage() {
   const { token, logout, hasPermission } = useAuth();
@@ -95,7 +96,7 @@ export function RolesPage() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-line">
+      <div className="overflow-hidden rounded-2xl border border-line shadow-card">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-hover text-ink-muted">
             <tr>
@@ -127,29 +128,22 @@ export function RolesPage() {
                     {role.description || "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {hasPermission("roles.edit") && (
-                        <button
-                          type="button"
-                          onClick={() => setPanelRole(role)}
-                          aria-label="Hariri"
-                          className="text-ink-muted hover:text-brand-accent"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                      )}
-                      {hasPermission("roles.delete") && (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(role)}
-                          disabled={deletingId === role.id}
-                          aria-label="Futa"
-                          className="text-ink-muted hover:text-brand-accent disabled:opacity-30"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
+                    <ActionMenu
+                      items={(
+                        [
+                          hasPermission("roles.edit") && {
+                            label: "Hariri",
+                            onClick: () => setPanelRole(role),
+                          },
+                          hasPermission("roles.delete") && {
+                            label: "Futa",
+                            onClick: () => void handleDelete(role),
+                            disabled: deletingId === role.id,
+                            danger: true,
+                          },
+                        ] as (ActionMenuItem | false)[]
+                      ).filter((item): item is ActionMenuItem => Boolean(item))}
+                    />
                   </td>
                 </tr>
               ))}

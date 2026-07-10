@@ -1,0 +1,39 @@
+Please fix the following UI/UX issues in the Kalour Beauty Empire dashboard. Inspect the current implementation first, then apply minimal safe changes without rewriting the whole system.
+
+1. Improve overall color quality and visual sharpness
+- Some dashboard colors look low-quality, dull, or not HD on display.
+- Improve the color rendering, contrast, shadows, borders, hover states, and background tones so the UI looks premium, clean, modern, and high-quality.
+- Keep the existing brand identity, but refine the color system to look sharper and more professional on both desktop and mobile screens.
+
+2. Fix table action popup/dropdown visibility
+- In each table, when clicking the three-dot action menu, the popup is sometimes hidden inside the table container, especially for the last rows.
+- Fix this globally so action dropdowns are always fully visible above other elements.
+- The dropdown should not be clipped by table overflow, cards, scroll containers, or page sections.
+- Use a better positioning approach such as portal/floating UI/fixed positioning/z-index improvement if needed.
+
+3. Fix notification modal/popup visibility
+- The notification popup/modal is currently hidden toward the right side and is not fully visible.
+- Improve it so it always appears fully visible within the dashboard viewport, regardless of screen size or page location.
+- It should be responsive, properly aligned, and not clipped by parent containers.
+- Ensure correct z-index and positioning above all dashboard content.
+
+4. Improve loading state on notification filters
+- In the notification page/modal, when changing dropdown filters such as “Aina Zote” and “Hali Zote”, the loading behavior does not look smooth or professional.
+- Add a better loading state for filter changes, such as subtle spinner, skeleton, disabled state, or smooth transition.
+- Avoid layout jumping or rough refresh behavior.
+- Make the filter experience feel clean and modern.
+
+5. Fix WYSIWYG editor typing/cursor issue on product creation page
+- On the product creation page: Bidhaa → Ongeza, the WYSIWYG editor is not implemented correctly.
+- When typing, the text/cursor behaves incorrectly: words appear behind other words, the cursor jumps, or typing position becomes abnormal.
+- Fix the editor so typing works normally like a standard rich text editor.
+- Cursor must stay in the correct position.
+- Text should not overlap, go behind placeholder/toolbar text, jump to the top, or move outside the editor.
+- Check editor CSS, z-index, contenteditable behavior, placeholder style, toolbar layout, height, focus state, and controlled/uncontrolled state issues.
+- Ensure the saved product description still stores formatted HTML/content correctly and displays properly on the product details page.
+
+After completing, report:
+- Changed files
+- What was fixed
+- How to test each issue
+- Any package, migration, or command needed

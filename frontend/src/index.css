@@ -7,13 +7,21 @@
 
 @theme {
   /* Semantic tokens: values below are the light-mode (default) palette.
-     The .dark block further down overrides the same custom properties. */
-  --color-page: #ffffff;
+     The .dark block further down overrides the same custom properties.
+
+     The page canvas is a soft cool gray rather than pure white so that
+     white surface cards visibly separate from the background — border,
+     shadow, and hover states all read crisper against it. Neutrals lean
+     slightly cool (blue-gray) for a sharper, more premium rendering than
+     flat warm grays. */
+  --color-page: #f7f8fa;
   --color-surface: #ffffff;
-  --color-surface-hover: #f3f4f6;
-  --color-ink: #111827;
-  --color-ink-muted: #4b5563;
-  --color-line: #e5e7eb;
+  --color-surface-hover: #f1f3f6;
+  --color-ink: #0d1626;
+  /* Muted text must stay clearly readable — secondary, not faded. This is
+     ~8.2:1 on white, comfortably past AAA for body sizes. */
+  --color-ink-muted: #3f4a5c;
+  --color-line: #e3e6eb;
 
   --color-brand-accent: #b80049;
   --color-brand-accent-dark: #8f003d;
@@ -25,22 +33,33 @@
      this token and are colored explicitly at their call site instead. */
   --color-icon: #b80049;
 
+  /* Card elevation: a barely-there two-layer shadow that adds depth to
+     surface cards/tables without looking heavy. Usable as `shadow-card`. */
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.07);
+
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
 .dark {
-  --color-page: #050505;
-  --color-surface: #151515;
+  /* Slightly lifted near-blacks instead of crushed #050505/#151515 — pure
+     blacks flatten depth and look muddy on most panels; a small lift keeps
+     the layering (page < surface < hover) legible. */
+  --color-page: #0b0b0d;
+  --color-surface: #17171a;
   /* Solid colors, not a translucent white overlay: interpolating from an
      opaque light-mode color to a low-alpha rgba(255,255,255,…) makes the
      alpha channel briefly pass through a much higher effective value than
      either end state, flashing a bright white halo around borders/hover
      surfaces mid-transition. Flat dark grays fade in cleanly instead. */
-  --color-surface-hover: #202020;
-  --color-ink: #f5f5f5;
-  --color-ink-muted: #a1a1aa;
-  --color-line: #2a2a2a;
+  --color-surface-hover: #222226;
+  --color-ink: #f7f8fa;
+  /* Same rule as light mode: muted, never washed out — lifted so secondary
+     text stays legible on the dark surfaces. */
+  --color-ink-muted: #b3b9c4;
+  --color-line: #2c2c31;
   --color-icon: #ffffff;
+  /* Shadows are nearly invisible on dark surfaces — deepen slightly. */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
 }
 
 html,
@@ -58,6 +77,41 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* A whisper of negative tracking is what makes modern SaaS UIs read
+     "sharp" instead of loose — Plus Jakarta Sans is drawn slightly wide at
+     UI sizes, so this tightens body text without hurting legibility. */
+  letter-spacing: -0.01em;
+}
+
+/* Headings get tighter tracking than body text — large bold text set at
+   default tracking is exactly what reads as "ordinary"; tightening it is
+   the single biggest premium cue in a dashboard. text-wrap: balance keeps
+   multi-line titles from leaving a stranded last word. */
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* Dashboards are full of numbers that must align and read instantly:
+   prices, stock counts, KPIs, timestamps. Tabular (fixed-width) numerals
+   keep digit columns steady in tables and stop KPI values from jittering
+   as they change. */
+table,
+code {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Table headers: compact uppercase with open tracking — headers become a
+   quiet label row above the data instead of competing with it, the
+   standard premium-dashboard treatment. One rule here covers every admin
+   table (the storefront has none). */
+thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* Smooth light/dark toggle: fade every themed color instead of snapping
@@ -127,5 +181,37 @@ body {
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
+  }
+}
+
+/* Liking a product: a quick overshoot-and-settle pop, not a flat scale. */
+@keyframes heart-like-pop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.5);
+  }
+  55% {
+    transform: scale(0.9);
+  }
+  75% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Unliking: a smaller, single dip — noticeably calmer than the like pop. */
+@keyframes heart-unlike-dip {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.82);
+  }
+  100% {
+    transform: scale(1);
   }
 }

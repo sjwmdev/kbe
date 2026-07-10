@@ -47,9 +47,18 @@ type Order struct {
 // performance" table — a product plus how many units of it sold within the
 // usecase-supplied lookback window.
 type ProductPerformance struct {
-	ProductID    uuid.UUID
-	ProductName  string
-	CategoryName string
-	UnitsSold    int
-	StockStatus  string
+	ProductID     uuid.UUID
+	ProductName   string
+	CategoryName  string
+	UnitsSold     int
+	StockStatus   string
+	StockQuantity int
+}
+
+// ProductOrderSummary aggregates all-time, non-cancelled order history for a
+// single product — backs the admin product details page.
+type ProductOrderSummary struct {
+	OrderCount int
+	UnitsSold  int
+	Revenue    float64
 }

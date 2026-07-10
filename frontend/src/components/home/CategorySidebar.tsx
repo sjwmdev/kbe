@@ -1,16 +1,24 @@
 import { Headset, LayoutGrid, Tag } from "lucide-react";
-import type { Category } from "../../types/product";
+import { PRODUCT_COLORS, type Category } from "../../types/product";
 import { buildGeneralWhatsAppLink } from "../../lib/whatsapp";
 
 type CategoryFilter = "all" | string;
+
+export interface PriceRange {
+  min: string;
+  max: string;
+}
 
 interface CategorySidebarProps {
   categories: Category[];
   value: CategoryFilter;
   onChange: (value: CategoryFilter) => void;
+  color: string | null;
+  onColorChange: (color: string | null) => void;
+  priceRange: PriceRange;
+  onPriceRangeChange: (range: PriceRange) => void;
 }
 
-const COLOR_SWATCHES = ["#000000", "#ffffff", "#b80049", "#c9a876", "#4b5563"];
 const SHOE_SIZES = ["38", "39", "40", "41", "42", "43", "44"];
 
 function ComingSoonTag() {
@@ -23,7 +31,15 @@ function ComingSoonTag() {
 
 // Paired with the whole main content column (hero + grid), the standard
 // Amazon/Alibaba category-rail layout.
-export function CategorySidebar({ categories, value, onChange }: CategorySidebarProps) {
+export function CategorySidebar({
+  categories,
+  value,
+  onChange,
+  color,
+  onColorChange,
+  priceRange,
+  onPriceRangeChange,
+}: CategorySidebarProps) {
   return (
     <aside className="hidden shrink-0 lg:block lg:w-64">
       <div className="sticky top-24 flex flex-col gap-4">
@@ -64,47 +80,57 @@ export function CategorySidebar({ categories, value, onChange }: CategorySidebar
           </nav>
         </div>
 
-        {/* Placeholder filters — not wired to real data yet (no price-range,
-            color, or size attributes exist on products today). Shown
-            disabled with a "Coming Soon" tag rather than silently doing
-            nothing when touched. */}
         <div className="rounded-sm border border-line bg-surface p-4">
-          <div className="mb-3 flex items-center justify-between px-2">
+          <div className="mb-3 px-2">
             <h3 className="text-sm font-bold text-ink">Kiwango cha Bei</h3>
-            <ComingSoonTag />
           </div>
-          <div className="px-2">
+          <div className="flex items-center gap-2 px-2">
             <input
-              type="range"
-              disabled
-              className="w-full cursor-not-allowed accent-brand-accent opacity-50"
+              type="number"
+              min={0}
+              placeholder="Chini"
+              value={priceRange.min}
+              onChange={(e) => onPriceRangeChange({ ...priceRange, min: e.target.value })}
+              className="w-full min-w-0 rounded-lg border border-line bg-surface-hover px-2 py-1.5 text-sm text-ink outline-none focus:border-brand-accent"
             />
-            <div className="mt-2 flex items-center justify-between text-xs text-ink-muted">
-              <span>TSh 0</span>
-              <span>TSh 500,000+</span>
-            </div>
+            <span className="text-ink-muted">–</span>
+            <input
+              type="number"
+              min={0}
+              placeholder="Juu"
+              value={priceRange.max}
+              onChange={(e) => onPriceRangeChange({ ...priceRange, max: e.target.value })}
+              className="w-full min-w-0 rounded-lg border border-line bg-surface-hover px-2 py-1.5 text-sm text-ink outline-none focus:border-brand-accent"
+            />
           </div>
         </div>
 
         <div className="rounded-sm border border-line bg-surface p-4">
-          <div className="mb-3 flex items-center justify-between px-2">
+          <div className="mb-3 px-2">
             <h3 className="text-sm font-bold text-ink">Rangi</h3>
-            <ComingSoonTag />
           </div>
           <div className="flex flex-wrap gap-2 px-2">
-            {COLOR_SWATCHES.map((color) => (
+            {PRODUCT_COLORS.map((c) => (
               <button
-                key={color}
+                key={c.name}
                 type="button"
-                disabled
-                aria-label={color}
-                style={{ backgroundColor: color }}
-                className="h-6 w-6 cursor-not-allowed rounded-full border border-line opacity-50"
+                onClick={() => onColorChange(color === c.name ? null : c.name)}
+                aria-label={c.name}
+                aria-current={color === c.name}
+                title={c.name}
+                style={{ backgroundColor: c.hex }}
+                className={`h-6 w-6 rounded-full border transition ${
+                  color === c.name
+                    ? "border-brand-accent ring-2 ring-brand-accent ring-offset-1 ring-offset-surface"
+                    : "border-line hover:border-brand-accent"
+                }`}
               />
             ))}
           </div>
         </div>
 
+        {/* Size filter stays a "Coming Soon" placeholder — no size/variant
+            attribute exists on products yet. */}
         <div className="rounded-sm border border-line bg-surface p-4">
           <div className="mb-3 flex items-center justify-between px-2">
             <h3 className="text-sm font-bold text-ink">Saizi</h3>

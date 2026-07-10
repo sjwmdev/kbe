@@ -1,5 +1,3 @@
-import type { StockStatus } from "./product";
-
 export type OrderStatus = "pending" | "confirmed" | "delivered" | "cancelled";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -49,15 +47,17 @@ export interface ProductPerformance {
   product_name: string;
   category: string;
   units_sold: number;
-  stock_status: StockStatus;
+  stock_quantity: number;
 }
 
 export interface DashboardSummary {
+  can_view_orders: boolean;
   total_sales: number;
   total_sales_trend_pct: number | null;
   total_orders: number;
   total_orders_trend_pct: number | null;
   active_customers: number;
   active_customers_trend_pct: number | null;
+  can_view_products: boolean;
   product_performance: ProductPerformance[];
 }

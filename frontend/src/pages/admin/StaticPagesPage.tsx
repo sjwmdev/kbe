@@ -48,7 +48,7 @@ function PageCard({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-6"
+      className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-6 shadow-card"
     >
       <h2 className="text-lg font-bold text-ink">{PAGE_LABELS[page.slug]}</h2>
 

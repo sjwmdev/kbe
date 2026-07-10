@@ -19,6 +19,7 @@ type ProductInput struct {
 	IsActive          bool
 	StockQuantity     int
 	LowStockThreshold int
+	Colors            []string
 }
 
 func (in ProductInput) Validate() error {
@@ -36,6 +37,11 @@ func (in ProductInput) Validate() error {
 	}
 	if in.LowStockThreshold < 0 {
 		return fmt.Errorf("%w: low stock threshold must not be negative", ErrValidation)
+	}
+	for _, c := range in.Colors {
+		if !domain.IsValidProductColor(c) {
+			return fmt.Errorf("%w: invalid color %q", ErrValidation, c)
+		}
 	}
 
 	return nil
@@ -71,9 +77,10 @@ func (u *ProductUsecase) checkCategory(ctx context.Context, categoryID, business
 
 // ListActive returns a page of active products for the public listing page
 // of one business, each already carrying its primary image and like count.
-// categoryID nil means no filter.
-func (u *ProductUsecase) ListActive(ctx context.Context, businessID uuid.UUID, categoryID *uuid.UUID, page, pageSize int) ([]domain.Product, int, error) {
-	return u.products.FindAllActive(ctx, businessID, categoryID, page, pageSize)
+// filter's fields are each optional (nil/empty means no filter on that
+// dimension).
+func (u *ProductUsecase) ListActive(ctx context.Context, businessID uuid.UUID, filter domain.ProductFilter, page, pageSize int) ([]domain.Product, int, error) {
+	return u.products.FindAllActive(ctx, businessID, filter, page, pageSize)
 }
 
 // ListAll returns a page of products, including inactive (soft-deleted) ones,
@@ -106,6 +113,31 @@ func (u *ProductUsecase) GetByID(ctx context.Context, id uuid.UUID) (*domain.Pro
 	return product, nil
 }
 
+// GetAdminDetail returns a single product with its full image gallery for
+// the admin read-only product details page. Same data-isolation rule as
+// Update/Delete — the tenant boundary is never bypassed, and a
+// non-SuperAdmin caller may only view a product they created.
+func (u *ProductUsecase) GetAdminDetail(ctx context.Context, id, businessID, callerID uuid.UUID, isSuperAdmin bool) (*domain.Product, error) {
+	product, err := u.products.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if product == nil || product.BusinessID != businessID {
+		return nil, domain.ErrNotFound
+	}
+	if !isSuperAdmin && (product.CreatedBy == nil || *product.CreatedBy != callerID) {
+		return nil, domain.ErrForbidden
+	}
+
+	images, err := u.images.FindByProductID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	product.Images = images
+
+	return product, nil
+}
+
 // Create records the authenticated caller's business and their own user ID
 // as the product's creator — the basis for data isolation (non-SuperAdmin
 // roles only see/edit their own products within their own business).
@@ -121,12 +153,13 @@ func (u *ProductUsecase) Create(ctx context.Context, in ProductInput, businessID
 	product := &domain.Product{
 		BusinessID:        businessID,
 		Name:              in.Name,
-		Description:       in.Description,
+		Description:       SanitizeDescriptionHTML(in.Description),
 		Price:             in.Price,
 		CategoryID:        in.CategoryID,
 		IsActive:          true,
 		StockQuantity:     in.StockQuantity,
 		LowStockThreshold: in.LowStockThreshold,
+		Colors:            in.Colors,
 		CreatedBy:         &createdBy,
 	}
 	if err := u.products.Create(ctx, product); err != nil {
@@ -163,12 +196,13 @@ func (u *ProductUsecase) Update(ctx context.Context, id uuid.UUID, in ProductInp
 	}
 
 	existing.Name = in.Name
-	existing.Description = in.Description
+	existing.Description = SanitizeDescriptionHTML(in.Description)
 	existing.Price = in.Price
 	existing.CategoryID = in.CategoryID
 	existing.IsActive = in.IsActive
 	existing.StockQuantity = in.StockQuantity
 	existing.LowStockThreshold = in.LowStockThreshold
+	existing.Colors = in.Colors
 
 	if err := u.products.Update(ctx, existing); err != nil {
 		return nil, err
@@ -196,6 +230,46 @@ func (u *ProductUsecase) Delete(ctx context.Context, id uuid.UUID, businessID, c
 	return u.products.SoftDelete(ctx, id)
 }
 
+// Restore reverses a soft delete/hide, making the product visible again.
+// Same data-isolation rule as Update/Delete.
+func (u *ProductUsecase) Restore(ctx context.Context, id uuid.UUID, businessID, callerID uuid.UUID, isSuperAdmin bool) error {
+	existing, err := u.products.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing == nil || existing.BusinessID != businessID {
+		return domain.ErrNotFound
+	}
+	if !isSuperAdmin && (existing.CreatedBy == nil || *existing.CreatedBy != callerID) {
+		return domain.ErrForbidden
+	}
+
+	return u.products.Restore(ctx, id)
+}
+
+// ForceDelete permanently removes a product row — for products created by
+// mistake with no order history. The repository translates the database's
+// ON DELETE RESTRICT violation (order_items.product_id) into
+// domain.ErrProductInUse when the product has order/financial history,
+// rather than silently cascading and corrupting that history. Same
+// data-isolation rule as Update/Delete; requires the separate
+// products.forceDelete permission (checked by the caller/middleware), since
+// this is materially more dangerous than a soft delete.
+func (u *ProductUsecase) ForceDelete(ctx context.Context, id uuid.UUID, businessID, callerID uuid.UUID, isSuperAdmin bool) error {
+	existing, err := u.products.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing == nil || existing.BusinessID != businessID {
+		return domain.ErrNotFound
+	}
+	if !isSuperAdmin && (existing.CreatedBy == nil || *existing.CreatedBy != callerID) {
+		return domain.ErrForbidden
+	}
+
+	return u.products.HardDelete(ctx, id)
+}
+
 // Like increments the social-proof like counter for a product. Public,
 // unauthenticated, and deliberately not businessID-scoped — same reasoning
 // as GetByID.
@@ -209,6 +283,22 @@ func (u *ProductUsecase) Like(ctx context.Context, id uuid.UUID) (int, error) {
 	}
 
 	return u.likes.Increment(ctx, id)
+}
+
+// Unlike reverses Like. Public, unauthenticated, and deliberately not
+// businessID-scoped — same reasoning as Like/GetByID; the client (not an
+// account, since the storefront has no customer login) is the only thing
+// tracking which products it has liked.
+func (u *ProductUsecase) Unlike(ctx context.Context, id uuid.UUID) (int, error) {
+	product, err := u.products.FindByID(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	if product == nil {
+		return 0, domain.ErrNotFound
+	}
+
+	return u.likes.Decrement(ctx, id)
 }
 
 // AddImage records an image against a product — either a freshly uploaded

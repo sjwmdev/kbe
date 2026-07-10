@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -137,30 +138,34 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 type profileDTO struct {
-	ID                 string    `json:"id"`
-	Username           string    `json:"username"`
-	Name               string    `json:"name"`
-	Email              string    `json:"email"`
-	Role               string    `json:"role"`
-	Permissions        []string  `json:"permissions"`
-	MustChangePassword bool      `json:"must_change_password"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                          string    `json:"id"`
+	Username                    string    `json:"username"`
+	Name                        string    `json:"name"`
+	Email                       string    `json:"email"`
+	Phone                       string    `json:"phone"`
+	DefaultCommunicationChannel string    `json:"default_communication_channel"`
+	Role                        string    `json:"role"`
+	Permissions                 []string  `json:"permissions"`
+	MustChangePassword          bool      `json:"must_change_password"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 func (h *AuthHandler) toProfileDTO(ctx context.Context, u domain.User) profileDTO {
 	roleName, permissions := h.resolveRoleInfo(ctx, &u)
 
 	return profileDTO{
-		ID:                 u.ID.String(),
-		Username:           u.Username,
-		Name:               u.Name,
-		Email:              u.Email,
-		Role:               roleName,
-		Permissions:        permissions,
-		MustChangePassword: u.MustChangePassword,
-		CreatedAt:          u.CreatedAt,
-		UpdatedAt:          u.UpdatedAt,
+		ID:                          u.ID.String(),
+		Username:                    u.Username,
+		Name:                        u.Name,
+		Email:                       u.Email,
+		Phone:                       u.Phone,
+		DefaultCommunicationChannel: u.DefaultCommunicationChannel,
+		Role:                        roleName,
+		Permissions:                 permissions,
+		MustChangePassword:          u.MustChangePassword,
+		CreatedAt:                   u.CreatedAt,
+		UpdatedAt:                   u.UpdatedAt,
 	}
 }
 
@@ -183,8 +188,10 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateProfileRequest struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name                        string `json:"name"`
+	Email                       string `json:"email"`
+	Phone                       string `json:"phone"`
+	DefaultCommunicationChannel string `json:"default_communication_channel"`
 }
 
 // UpdateProfile handles PUT /api/v1/admin/me (protected).
@@ -202,14 +209,40 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := h.auth.UpdateProfile(r.Context(), claims.UserID, claims.BusinessID, usecase.ProfileInput{
-		Name:  req.Name,
-		Email: req.Email,
+		Name:                        req.Name,
+		Email:                       req.Email,
+		Phone:                       req.Phone,
+		DefaultCommunicationChannel: req.DefaultCommunicationChannel,
 	})
 	if handleUsecaseError(w, err) {
 		return
 	}
 
 	writeJSON(w, http.StatusOK, h.toProfileDTO(r.Context(), *user))
+}
+
+type forgotPasswordRequest struct {
+	Identifier string `json:"identifier"`
+}
+
+// ForgotPassword handles POST /api/v1/admin/forgot-password (public, no
+// auth). Always returns the same generic success body whether or not the
+// identifier matched an account — see AuthUsecase.RequestPasswordReset's
+// anti-enumeration note.
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req forgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.auth.RequestPasswordReset(r.Context(), strings.TrimSpace(req.Identifier)); handleUsecaseError(w, err) {
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "password reset request has been sent",
+	})
 }
 
 type changePasswordRequest struct {

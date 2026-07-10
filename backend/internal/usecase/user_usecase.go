@@ -18,12 +18,13 @@ import (
 // authenticated caller's own profile/password — different permission
 // boundaries, so keeping them apart avoids one usecase doing double duty.
 type UserUsecase struct {
-	users domain.UserRepository
-	roles domain.RoleRepository
+	users         domain.UserRepository
+	roles         domain.RoleRepository
+	notifications *NotificationUsecase
 }
 
-func NewUserUsecase(users domain.UserRepository, roles domain.RoleRepository) *UserUsecase {
-	return &UserUsecase{users: users, roles: roles}
+func NewUserUsecase(users domain.UserRepository, roles domain.RoleRepository, notifications *NotificationUsecase) *UserUsecase {
+	return &UserUsecase{users: users, roles: roles, notifications: notifications}
 }
 
 func (u *UserUsecase) ListUsers(ctx context.Context, businessID uuid.UUID) ([]domain.User, error) {
@@ -151,6 +152,58 @@ func (u *UserUsecase) populateRoleName(ctx context.Context, user *domain.User, b
 		user.RoleName = role.Name
 	}
 	return nil
+}
+
+// ResetPassword generates a fresh temporary password for the target user,
+// stores only its bcrypt hash, and flags the account so the user is forced
+// to choose their own password on next login. The plaintext is returned
+// exactly once for the admin to copy/send — it is never persisted. Any open
+// password_reset_request notification for the user is resolved best-effort.
+// The HTTP route is gated by users.resetPassword and audit-logged by the
+// standard mutation middleware.
+//
+// Self-reset is refused: the caller's own password changes go through
+// AuthUsecase.ChangePassword (which requires the current password), and a
+// self-reset would instantly lock the caller behind the must-change gate.
+func (u *UserUsecase) ResetPassword(ctx context.Context, businessID, callerID, targetID uuid.UUID) (*domain.User, string, error) {
+	if targetID == callerID {
+		return nil, "", fmt.Errorf("%w: use your profile page to change your own password", ErrValidation)
+	}
+
+	target, err := u.users.FindByID(ctx, targetID, businessID)
+	if err != nil {
+		return nil, "", err
+	}
+	if target == nil {
+		return nil, "", domain.ErrNotFound
+	}
+
+	password, err := generateRandomPassword(generatedPasswordLength)
+	if err != nil {
+		return nil, "", err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: hash password: %w", err)
+	}
+
+	if err := u.users.UpdatePasswordHash(ctx, target.ID, string(hash)); err != nil {
+		return nil, "", err
+	}
+	if err := u.users.SetMustChangePassword(ctx, target.ID, true); err != nil {
+		return nil, "", err
+	}
+	target.MustChangePassword = true
+
+	// Best-effort: a failed notification resolve must not fail the reset —
+	// the password is already changed.
+	_ = u.notifications.ResolvePasswordResetRequest(ctx, businessID, target.ID)
+
+	if err := u.populateRoleName(ctx, target, businessID); err != nil {
+		return nil, "", err
+	}
+
+	return target, password, nil
 }
 
 // SetActive toggles a user's active flag, refusing to let a caller deactivate

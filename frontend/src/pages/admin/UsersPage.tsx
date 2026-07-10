@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useConfirm } from "../../context/ConfirmContext";
@@ -7,12 +7,15 @@ import {
   ApiError,
   deleteUser,
   fetchUsers,
+  resetUserPassword,
   setUserActive,
 } from "../../lib/api";
-import type { AdminUser } from "../../types/rbac";
+import { COMMUNICATION_CHANNEL_LABELS, type AdminUser } from "../../types/rbac";
 import { Skeleton } from "../../components/Skeleton";
 import { STATUS_TONE_CLASSES } from "../../lib/statusTone";
 import { UserFormPanel } from "../../components/admin/UserFormPanel";
+import { ResetPasswordModal } from "../../components/admin/ResetPasswordModal";
+import { ActionMenu, type ActionMenuItem } from "../../components/admin/ActionMenu";
 
 export function UsersPage() {
   const { token, logout, hasPermission } = useAuth();
@@ -25,6 +28,11 @@ export function UsersPage() {
   const [panelUser, setPanelUser] = useState<AdminUser | null | undefined>(
     undefined,
   );
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{
+    user: AdminUser;
+    password: string;
+  } | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -96,6 +104,34 @@ export function UsersPage() {
     }
   }
 
+  async function handleResetPassword(user: AdminUser) {
+    if (!token) return;
+    const confirmed = await confirm({
+      title: "Weka Upya Nenosiri",
+      message: `Una uhakika unataka kumtengenezea "${user.name || user.username}" nenosiri jipya la muda? Nenosiri lake la sasa litaacha kufanya kazi mara moja.`,
+      confirmLabel: "Weka Upya",
+    });
+    if (!confirmed) return;
+
+    setResettingId(user.id);
+    try {
+      const result = await toast.promise(resetUserPassword(token, user.id), {
+        loading: "Inatengeneza nenosiri jipya...",
+        success: "Nenosiri jipya la muda limetengenezwa.",
+        error: (err) =>
+          err instanceof ApiError && err.status === 401
+            ? "Muda wa kuingia umeisha. Tafadhali ingia tena."
+            : "Imeshindwa kuweka upya nenosiri.",
+      });
+      setResetResult({ user: result.user, password: result.temporary_password });
+      handleSaved(result.user);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) logout();
+    } finally {
+      setResettingId(null);
+    }
+  }
+
   function handleSaved(saved: AdminUser) {
     setUsers((prev) => {
       const exists = prev.some((u) => u.id === saved.id);
@@ -125,12 +161,13 @@ export function UsersPage() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-line">
+      <div className="overflow-hidden rounded-2xl border border-line shadow-card">
         <table className="w-full text-left text-sm">
           <thead className="bg-surface-hover text-ink-muted">
             <tr>
               <th className="px-4 py-3 font-semibold">Jina</th>
               <th className="px-4 py-3 font-semibold">Barua Pepe</th>
+              <th className="px-4 py-3 font-semibold">Mawasiliano</th>
               <th className="px-4 py-3 font-semibold">Jukumu</th>
               <th className="px-4 py-3 font-semibold">Hali</th>
               <th className="px-4 py-3 font-semibold">Vitendo</th>
@@ -145,6 +182,9 @@ export function UsersPage() {
                   </td>
                   <td className="px-4 py-3">
                     <Skeleton className="h-4 w-32" />
+                  </td>
+                  <td className="px-4 py-3">
+                    <Skeleton className="h-4 w-24" />
                   </td>
                   <td className="px-4 py-3">
                     <Skeleton className="h-4 w-20" />
@@ -170,6 +210,14 @@ export function UsersPage() {
                   </td>
                   <td className="px-4 py-3 text-ink-muted">{user.email}</td>
                   <td className="px-4 py-3 text-ink-muted">
+                    {COMMUNICATION_CHANNEL_LABELS[
+                      user.default_communication_channel
+                    ] ?? "—"}
+                    {user.phone && (
+                      <span className="block text-xs">{user.phone}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-ink-muted">
                     {user.role_name || "—"}
                   </td>
                   <td className="px-4 py-3">
@@ -185,29 +233,27 @@ export function UsersPage() {
                     </button>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {hasPermission("users.edit") && (
-                        <button
-                          type="button"
-                          onClick={() => setPanelUser(user)}
-                          aria-label="Hariri"
-                          className="text-ink-muted hover:text-brand-accent"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                      )}
-                      {hasPermission("users.delete") && (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(user)}
-                          disabled={deletingId === user.id}
-                          aria-label="Futa"
-                          className="text-ink-muted hover:text-brand-accent disabled:opacity-30"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
+                    <ActionMenu
+                      items={(
+                        [
+                          hasPermission("users.edit") && {
+                            label: "Hariri",
+                            onClick: () => setPanelUser(user),
+                          },
+                          hasPermission("users.resetPassword") && {
+                            label: "Weka Upya Nenosiri",
+                            onClick: () => void handleResetPassword(user),
+                            disabled: resettingId === user.id,
+                          },
+                          hasPermission("users.delete") && {
+                            label: "Futa",
+                            onClick: () => void handleDelete(user),
+                            disabled: deletingId === user.id,
+                            danger: true,
+                          },
+                        ] as (ActionMenuItem | false)[]
+                      ).filter((item): item is ActionMenuItem => Boolean(item))}
+                    />
                   </td>
                 </tr>
               ))}
@@ -224,6 +270,14 @@ export function UsersPage() {
           user={panelUser}
           onClose={() => setPanelUser(undefined)}
           onSaved={handleSaved}
+        />
+      )}
+
+      {resetResult && (
+        <ResetPasswordModal
+          user={resetResult.user}
+          temporaryPassword={resetResult.password}
+          onClose={() => setResetResult(null)}
         />
       )}
     </div>

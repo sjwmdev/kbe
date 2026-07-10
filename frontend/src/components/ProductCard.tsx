@@ -15,6 +15,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const primaryImage =
     product.images.find((img) => img.is_primary) ?? product.images[0];
   const isLiked = product.like_count > 0;
+  const outOfStock = product.stock_status === "out_of_stock";
 
   function handleWhatsAppClick(e: MouseEvent) {
     e.preventDefault();
@@ -59,14 +60,24 @@ export function ProductCard({ product }: ProductCardProps) {
           <span className="text-base font-bold leading-none text-ink">
             {formatPrice(product.price)}
           </span>
-          <button
-            type="button"
-            onClick={handleWhatsAppClick}
-            aria-label={`Wasiliana kwa WhatsApp kuhusu ${product.name}`}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-ink-muted transition hover:border-brand-accent hover:bg-brand-accent hover:text-white"
-          >
-            <MessageCircle size={16} />
-          </button>
+          {outOfStock ? (
+            <span
+              aria-label="Bidhaa imeisha stoo"
+              title="Bidhaa imeisha stoo"
+              className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full border border-line text-ink-muted opacity-40"
+            >
+              <MessageCircle size={16} />
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleWhatsAppClick}
+              aria-label={`Wasiliana kwa WhatsApp kuhusu ${product.name}`}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-ink-muted transition hover:border-brand-accent hover:bg-brand-accent hover:text-white"
+            >
+              <MessageCircle size={16} />
+            </button>
+          )}
         </div>
       </div>
     </Link>

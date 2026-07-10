@@ -127,12 +127,14 @@ Add a read-only product details page for managers/admins. This page should not b
 - Orders summary related to that product
 - Likes/favorites count if available
 - Created/updated information
+- Created by/updated by information
+- etc.
 
 ### UX Direction
 Use a modern common admin details view: summary cards, clean sections, product image preview, metadata, and related activity if available.
 
 ### Acceptance Criteria
-- Product table has “View Details” action.
+- Product table has “View Details” or shorter name 'View' action.
 - Details page is read-only.
 - Product data is presented clearly and professionally.
 - Page is permission-protected.

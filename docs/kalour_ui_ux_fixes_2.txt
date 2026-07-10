@@ -1,0 +1,75 @@
+Please improve the typography system across the Kalour Beauty Empire website and admin dashboard to make the UI feel more premium, sharp, modern, and visually attractive, similar to high-end SaaS/e-commerce dashboards.
+
+Current issue:
+The current fonts are readable, but they look too ordinary, dull, faded, and not premium enough. Some text appears “kufubaa/kuvubaa” instead of looking crisp, bright, confident, and high-quality.
+
+Use the shared SUNO dashboard screenshot only as inspiration for:
+- clean modern font rendering
+- strong readable headings
+- premium dark UI typography contrast
+- better font weight balance
+- sharper text appearance
+- more polished spacing and hierarchy
+
+Do not copy SUNO’s design directly. Only improve Kalour’s own brand style.
+
+Tasks:
+
+1. Review the current font system
+- Inspect global CSS, Tailwind config, layout components, dashboard components, form components, tables, cards, modals, sidebar, navbar, buttons, labels, and product pages.
+- Identify where font sizes, font weights, colors, opacity, line-height, letter spacing, or font smoothing make the UI look dull.
+
+2. Improve font family and rendering
+- Keep or choose a premium modern sans-serif font suitable for e-commerce/dashboard UI, such as Inter, Geist, Manrope, Plus Jakarta Sans, or a similar clean font already available in the project.
+- Apply it consistently across the full website and admin dashboard.
+- Enable better font smoothing/anti-aliasing where appropriate.
+- Ensure text looks crisp on dark and light themes.
+
+3. Improve font hierarchy
+- Make headings stronger and more premium.
+- Improve dashboard titles, sidebar text, navbar text, table headers, card titles, form labels, input text, buttons, dropdown text, modal titles, notification text, and product information text.
+- Use better font weights, for example:
+  - Main page titles: bold/semibold, clear and sharp
+  - Section titles: semibold
+  - Body text: medium/regular but not faded
+  - Labels: medium with good contrast
+  - Buttons: semibold and clean
+  - Table headers: semibold with better readability
+
+4. Improve font colors and contrast
+- Avoid faded gray text where important information needs to be clear.
+- Improve text contrast on dark backgrounds and light backgrounds.
+- Keep the Kalour brand identity and brand color, but make text feel more HD, elegant, and readable.
+- Make muted text still visible and professional, not weak or washed out.
+
+5. Improve spacing and readability
+- Adjust line-height, letter spacing, and font sizes where needed.
+- Ensure form labels, inputs, buttons, tables, cards, and notifications have comfortable spacing.
+- Avoid oversized or too-small text.
+- Make the dashboard feel polished and premium without making it crowded.
+
+6. Apply globally but safely
+- Do not rewrite the whole UI.
+- Make minimal, safe, centralized changes where possible using global CSS, Tailwind config, theme tokens, or reusable components.
+- Avoid random one-by-one styling unless necessary.
+- Ensure changes affect the full system consistently.
+
+7. Test after changes
+Please test:
+- Login page
+- Admin dashboard home
+- Sidebar/navbar
+- Product list table
+- Product creation page
+- Notifications page/modal
+- Forms and inputs
+- Website homepage/product cards/product details
+- Dark and light background visibility if both exist
+
+Final report:
+After completing, report:
+- Changed files
+- What typography improvements were made
+- Which font/fallback system is now used
+- What pages/components were tested
+- Any command/package needed

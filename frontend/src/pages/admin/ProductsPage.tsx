@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Pencil, Search, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useConfirm } from "../../context/ConfirmContext";
@@ -8,22 +8,22 @@ import {
   ApiError,
   deleteProduct,
   fetchAdminProducts,
+  forceDeleteProduct,
   resolveMediaUrl,
+  restoreProduct,
 } from "../../lib/api";
-import {
-  STOCK_STATUS_LABELS,
-  STOCK_STATUS_TONE,
-  type Product,
-} from "../../types/product";
+import type { Product } from "../../types/product";
 import { formatPrice } from "../../lib/format";
 import { ImagePlaceholder } from "../../components/ImagePlaceholder";
 import { TableSkeleton } from "../../components/Skeleton";
 import { StatusBadge } from "../../components/StatusBadge";
+import { ActionMenu, type ActionMenuItem } from "../../components/admin/ActionMenu";
 
 const PAGE_SIZE = 10;
 
 export function ProductsPage() {
   const { token, logout, hasPermission } = useAuth();
+  const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
   const [products, setProducts] = useState<Product[]>([]);
@@ -103,6 +103,62 @@ export function ProductsPage() {
     }
   }
 
+  async function handleRestore(product: Product) {
+    if (!token) return;
+    setDeletingId(product.id);
+    try {
+      await toast.promise(restoreProduct(token, product.id), {
+        loading: "Inarejesha bidhaa...",
+        success: `"${product.name}" imerejeshwa.`,
+        error: (err) =>
+          err instanceof ApiError && err.status === 401
+            ? "Muda wa kuingia umeisha. Tafadhali ingia tena."
+            : "Imeshindwa kurejesha bidhaa.",
+      });
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, is_active: true } : p)),
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleForceDelete(product: Product) {
+    if (!token) return;
+    const confirmed = await confirm({
+      title: "Futa Bidhaa Kabisa",
+      message: `Una uhakika unataka kufuta "${product.name}" KABISA kutoka kwenye mfumo? Hatua hii HAIWEZI kutenduliwa. Ikiwa bidhaa hii ina historia ya oda, kitendo hiki kitashindwa ili kulinda taarifa za kifedha.`,
+      confirmLabel: "Futa Kabisa",
+    });
+    if (!confirmed) return;
+
+    setDeletingId(product.id);
+    try {
+      await toast.promise(forceDeleteProduct(token, product.id), {
+        loading: "Inafuta bidhaa kabisa...",
+        success: `"${product.name}" imefutwa kabisa.`,
+        error: (err) =>
+          err instanceof ApiError && err.status === 401
+            ? "Muda wa kuingia umeisha. Tafadhali ingia tena."
+            : err instanceof ApiError
+              ? err.message
+              : "Imeshindwa kufuta bidhaa kabisa.",
+      });
+      setProducts((prev) => prev.filter((p) => p.id !== product.id));
+      setTotal((prev) => prev - 1);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
@@ -127,7 +183,7 @@ export function ProductsPage() {
       )}
 
       {(loading || filtered.length > 0) && (
-        <div className="overflow-hidden rounded-2xl border border-line">
+        <div className="overflow-hidden rounded-2xl border border-line shadow-card">
           <table className="w-full text-left text-sm">
             <thead className="bg-surface-hover text-ink-muted">
               <tr>
@@ -169,11 +225,8 @@ export function ProductsPage() {
                   <td className="px-4 py-3 text-ink-muted">
                     {formatPrice(product.price)}
                   </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge tone={STOCK_STATUS_TONE[product.stock_status]}>
-                      {STOCK_STATUS_LABELS[product.stock_status]} (
-                      {product.stock_quantity})
-                    </StatusBadge>
+                  <td className="px-4 py-3 text-ink-muted">
+                    {product.stock_quantity}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge tone={product.is_active ? "success" : "neutral"}>
@@ -181,28 +234,37 @@ export function ProductsPage() {
                     </StatusBadge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {hasPermission("products.edit") && (
-                        <Link
-                          to={`/admin/products/${product.id}/edit`}
-                          aria-label="Hariri"
-                          className="text-ink-muted hover:text-brand-accent"
-                        >
-                          <Pencil size={16} />
-                        </Link>
-                      )}
-                      {hasPermission("products.delete") && (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(product)}
-                          disabled={!product.is_active || deletingId === product.id}
-                          aria-label="Ficha"
-                          className="text-ink-muted hover:text-brand-accent disabled:opacity-30"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
+                    <ActionMenu
+                      items={(
+                        [
+                          hasPermission("products.view") && {
+                            label: "Angalia",
+                            onClick: () => navigate(`/admin/products/${product.id}`),
+                          },
+                          hasPermission("products.edit") && {
+                            label: "Hariri",
+                            onClick: () => navigate(`/admin/products/${product.id}/edit`),
+                          },
+                          hasPermission("products.delete") && product.is_active && {
+                            label: "Ficha",
+                            onClick: () => void handleDelete(product),
+                            disabled: deletingId === product.id,
+                            danger: true,
+                          },
+                          hasPermission("products.restore") && !product.is_active && {
+                            label: "Rejesha",
+                            onClick: () => void handleRestore(product),
+                            disabled: deletingId === product.id,
+                          },
+                          hasPermission("products.forceDelete") && !product.is_active && {
+                            label: "Futa Kabisa",
+                            onClick: () => void handleForceDelete(product),
+                            disabled: deletingId === product.id,
+                            danger: true,
+                          },
+                        ] as (ActionMenuItem | false)[]
+                      ).filter((item): item is ActionMenuItem => Boolean(item))}
+                    />
                   </td>
                 </tr>
                 );

@@ -54,29 +54,34 @@ func (in OrderInput) Validate() error {
 // one-fetch simplicity. Trend fields are nil when the prior window had no
 // baseline to compare against (avoids a divide-by-zero "infinite%" figure).
 type DashboardSummary struct {
+	CanViewOrders           bool
 	TotalSales              float64
 	TotalSalesTrendPct      *float64
 	TotalOrders             int
 	TotalOrdersTrendPct     *float64
 	ActiveCustomers         int
 	ActiveCustomersTrendPct *float64
+	CanViewProducts         bool
 	ProductPerformance      []domain.ProductPerformance
 }
 
 type OrderUsecase struct {
-	orders    domain.OrderRepository
-	customers domain.CustomerRepository
-	products  domain.ProductRepository
+	orders        domain.OrderRepository
+	customers     domain.CustomerRepository
+	products      domain.ProductRepository
+	notifications *NotificationUsecase
 }
 
-func NewOrderUsecase(orders domain.OrderRepository, customers domain.CustomerRepository, products domain.ProductRepository) *OrderUsecase {
-	return &OrderUsecase{orders: orders, customers: customers, products: products}
+func NewOrderUsecase(orders domain.OrderRepository, customers domain.CustomerRepository, products domain.ProductRepository, notifications *NotificationUsecase) *OrderUsecase {
+	return &OrderUsecase{orders: orders, customers: customers, products: products, notifications: notifications}
 }
 
 // Create finds-or-creates the customer by phone, validates each line item's
 // product (exists, belongs to businessID, owned by the caller unless
 // SuperAdmin, has enough stock), snapshots prices, and records the order.
-// Stock is decremented by the repository within its own transaction.
+// Stock is decremented by the repository within its own transaction. Once
+// the order is recorded, any item whose stock is now at or below its
+// low-stock threshold raises an admin notification.
 //
 // businessID is checked unconditionally, even for SuperAdmin — SuperAdmin
 // only ever bypasses the created_by ownership check within their own
@@ -92,6 +97,13 @@ func (u *OrderUsecase) Create(ctx context.Context, in OrderInput, businessID, cr
 	}
 
 	items := make([]domain.OrderItem, 0, len(in.Items))
+	type stockCheck struct {
+		productID         uuid.UUID
+		productName       string
+		newStock          int
+		lowStockThreshold int
+	}
+	stockChecks := make([]stockCheck, 0, len(in.Items))
 	var total float64
 	for _, line := range in.Items {
 		product, err := u.products.FindByID(ctx, line.ProductID)
@@ -115,6 +127,12 @@ func (u *OrderUsecase) Create(ctx context.Context, in OrderInput, businessID, cr
 			Quantity:     line.Quantity,
 			UnitPrice:    product.Price,
 		})
+		stockChecks = append(stockChecks, stockCheck{
+			productID:         product.ID,
+			productName:       product.Name,
+			newStock:          product.StockQuantity - line.Quantity,
+			lowStockThreshold: product.LowStockThreshold,
+		})
 		total += product.Price * float64(line.Quantity)
 	}
 
@@ -127,7 +145,20 @@ func (u *OrderUsecase) Create(ctx context.Context, in OrderInput, businessID, cr
 		CreatedBy:   &createdBy,
 	}
 
-	return u.orders.Create(ctx, order)
+	created, err := u.orders.Create(ctx, order)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort: a notification failure must never fail an already-recorded
+	// order.
+	for _, check := range stockChecks {
+		if check.newStock <= check.lowStockThreshold {
+			_ = u.notifications.NotifyLowStock(ctx, businessID, check.productID, check.productName, check.newStock)
+		}
+	}
+
+	return created, nil
 }
 
 // List returns a page of orders scoped to businessID. createdBy nil means no
@@ -166,43 +197,63 @@ func (u *OrderUsecase) UpdateStatus(ctx context.Context, id uuid.UUID, status do
 // the preceding 30-day window, plus the top 5 products by units sold in the
 // current window, all scoped to businessID. createdBy nil means no
 // additional ownership filter (SuperAdmin sees the whole business).
-func (u *OrderUsecase) DashboardSummary(ctx context.Context, businessID uuid.UUID, createdBy *uuid.UUID) (DashboardSummary, error) {
+//
+// canViewOrders/canViewProducts gate not just what the response shows but
+// which queries even run — a role without orders.view never causes sales/
+// order/customer figures to be computed at all, and one without
+// products.view never causes the product performance query to run. This is
+// the enforcement point, not just a UI hint: the frontend hides sections
+// based on the same permissions, but that's cosmetic without this backend
+// gate.
+func (u *OrderUsecase) DashboardSummary(ctx context.Context, businessID uuid.UUID, createdBy *uuid.UUID, canViewOrders, canViewProducts bool) (DashboardSummary, error) {
+	summary := DashboardSummary{CanViewOrders: canViewOrders, CanViewProducts: canViewProducts}
 	now := time.Now()
 	currentStart := now.Add(-dashboardWindow)
 	previousStart := currentStart.Add(-dashboardWindow)
 
-	currentSales, currentOrders, err := u.orders.SummaryStats(ctx, businessID, createdBy, currentStart, now)
-	if err != nil {
-		return DashboardSummary{}, err
-	}
-	previousSales, previousOrders, err := u.orders.SummaryStats(ctx, businessID, createdBy, previousStart, currentStart)
-	if err != nil {
-		return DashboardSummary{}, err
+	if canViewOrders {
+		currentSales, currentOrders, err := u.orders.SummaryStats(ctx, businessID, createdBy, currentStart, now)
+		if err != nil {
+			return DashboardSummary{}, err
+		}
+		previousSales, previousOrders, err := u.orders.SummaryStats(ctx, businessID, createdBy, previousStart, currentStart)
+		if err != nil {
+			return DashboardSummary{}, err
+		}
+
+		currentCustomers, err := u.customers.CountActiveSince(ctx, businessID, createdBy, currentStart, now)
+		if err != nil {
+			return DashboardSummary{}, err
+		}
+		previousCustomers, err := u.customers.CountActiveSince(ctx, businessID, createdBy, previousStart, currentStart)
+		if err != nil {
+			return DashboardSummary{}, err
+		}
+
+		summary.TotalSales = currentSales
+		summary.TotalSalesTrendPct = trendPct(currentSales, previousSales)
+		summary.TotalOrders = currentOrders
+		summary.TotalOrdersTrendPct = trendPct(float64(currentOrders), float64(previousOrders))
+		summary.ActiveCustomers = currentCustomers
+		summary.ActiveCustomersTrendPct = trendPct(float64(currentCustomers), float64(previousCustomers))
 	}
 
-	currentCustomers, err := u.customers.CountActiveSince(ctx, businessID, createdBy, currentStart, now)
-	if err != nil {
-		return DashboardSummary{}, err
-	}
-	previousCustomers, err := u.customers.CountActiveSince(ctx, businessID, createdBy, previousStart, currentStart)
-	if err != nil {
-		return DashboardSummary{}, err
-	}
-
-	topProducts, err := u.orders.TopProductPerformance(ctx, businessID, createdBy, currentStart, 5)
-	if err != nil {
-		return DashboardSummary{}, err
+	if canViewProducts {
+		topProducts, err := u.orders.TopProductPerformance(ctx, businessID, createdBy, currentStart, 5)
+		if err != nil {
+			return DashboardSummary{}, err
+		}
+		summary.ProductPerformance = topProducts
 	}
 
-	return DashboardSummary{
-		TotalSales:              currentSales,
-		TotalSalesTrendPct:      trendPct(currentSales, previousSales),
-		TotalOrders:             currentOrders,
-		TotalOrdersTrendPct:     trendPct(float64(currentOrders), float64(previousOrders)),
-		ActiveCustomers:         currentCustomers,
-		ActiveCustomersTrendPct: trendPct(float64(currentCustomers), float64(previousCustomers)),
-		ProductPerformance:      topProducts,
-	}, nil
+	return summary, nil
+}
+
+// ProductSummary returns one product's all-time, non-cancelled order
+// history — backs the admin product details page's "orders summary"
+// section. Always scoped to businessID.
+func (u *OrderUsecase) ProductSummary(ctx context.Context, businessID, productID uuid.UUID) (domain.ProductOrderSummary, error) {
+	return u.orders.ProductOrderSummary(ctx, businessID, productID)
 }
 
 // trendPct returns the percentage change from previous to current, or nil

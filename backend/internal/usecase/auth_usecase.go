@@ -17,11 +17,43 @@ const (
 )
 
 type AuthUsecase struct {
-	users domain.UserRepository
+	users         domain.UserRepository
+	notifications *NotificationUsecase
 }
 
-func NewAuthUsecase(users domain.UserRepository) *AuthUsecase {
-	return &AuthUsecase{users: users}
+func NewAuthUsecase(users domain.UserRepository, notifications *NotificationUsecase) *AuthUsecase {
+	return &AuthUsecase{users: users, notifications: notifications}
+}
+
+// RequestPasswordReset handles an anonymous forgot-password submission:
+// instead of emailing a reset link, it raises a dashboard notification for
+// that user's business admins, who perform the actual reset (see
+// UserUsecase.ResetPassword). identifier may be an email or a username —
+// both are unique system-wide.
+//
+// Deliberately never reports whether the identifier matched anything: the
+// caller is unauthenticated, so distinguishing "request recorded" from
+// "no such account" would let anyone probe which emails/usernames exist.
+func (u *AuthUsecase) RequestPasswordReset(ctx context.Context, identifier string) error {
+	if identifier == "" {
+		return fmt.Errorf("%w: email or username is required", ErrValidation)
+	}
+
+	user, err := u.users.FindByEmail(ctx, identifier)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		user, err = u.users.FindByUsername(ctx, identifier)
+		if err != nil {
+			return err
+		}
+	}
+	if user == nil || !user.IsActive {
+		return nil
+	}
+
+	return u.notifications.NotifyPasswordResetRequest(ctx, user.BusinessID, user.ID, user.Name, user.Email)
 }
 
 // Authenticate verifies admin credentials by email and returns the matching
@@ -73,8 +105,10 @@ func (u *AuthUsecase) GetProfile(ctx context.Context, userID, businessID uuid.UU
 }
 
 type ProfileInput struct {
-	Name  string
-	Email string
+	Name                        string
+	Email                       string
+	Phone                       string
+	DefaultCommunicationChannel string
 }
 
 func (in ProfileInput) Validate() error {
@@ -83,6 +117,14 @@ func (in ProfileInput) Validate() error {
 	}
 	if in.Email == "" {
 		return fmt.Errorf("%w: email is required", ErrValidation)
+	}
+	if !domain.IsValidCommunicationChannel(in.DefaultCommunicationChannel) {
+		return fmt.Errorf("%w: invalid communication channel", ErrValidation)
+	}
+	// WhatsApp as the preferred channel is meaningless without a number to
+	// send to — catch it here rather than at message-send time.
+	if in.DefaultCommunicationChannel == domain.CommunicationChannelWhatsApp && in.Phone == "" {
+		return fmt.Errorf("%w: phone number is required for the WhatsApp channel", ErrValidation)
 	}
 	return nil
 }
@@ -103,6 +145,8 @@ func (u *AuthUsecase) UpdateProfile(ctx context.Context, userID, businessID uuid
 
 	user.Name = in.Name
 	user.Email = in.Email
+	user.Phone = in.Phone
+	user.DefaultCommunicationChannel = in.DefaultCommunicationChannel
 
 	if err := u.users.UpdateProfile(ctx, user); err != nil {
 		return nil, err

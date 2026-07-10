@@ -109,7 +109,7 @@ export function AuditLogsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-extrabold text-ink">Kumbukumbu za Mfumo</h1>
+          <h1 className="text-2xl font-extrabold text-ink">Kumbukumbu</h1>
           <p className="text-ink-muted">
             Rekodi ya vitendo muhimu na kuingia kwa watumiaji.
           </p>
@@ -131,7 +131,7 @@ export function AuditLogsPage() {
       )}
 
       {(loading || logs.length > 0) && (
-        <div className="overflow-hidden rounded-2xl border border-line">
+        <div className="overflow-hidden rounded-2xl border border-line shadow-card">
           <table className="w-full text-left text-sm">
             <thead className="bg-surface-hover text-ink-muted">
               <tr>

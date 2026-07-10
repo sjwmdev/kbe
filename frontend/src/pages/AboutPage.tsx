@@ -22,10 +22,7 @@ export function AboutPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-      <span className="text-xs font-semibold uppercase tracking-widest text-brand-accent">
-        Kuhusu Sisi
-      </span>
-      <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl">
+      <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-4xl">
         {page?.title ?? "Kalour Beauty Empire"}
       </h1>
 

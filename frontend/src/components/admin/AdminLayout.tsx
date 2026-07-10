@@ -19,6 +19,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { ThemeToggle } from "../ThemeToggle";
 import { BrandLogo } from "../BrandLogo";
+import { NotificationBell } from "./NotificationBell";
 
 // While a forced password change is pending, only these two routes stay
 // reachable — everything else redirects here. Matches the task's "show
@@ -53,7 +54,7 @@ const managementNavItems = [
 const auditLogNavItem = {
   to: "/admin/audit-logs",
   end: false,
-  label: "Kumbukumbu za Mfumo",
+  label: "Kumbukumbu",
   icon: ScrollText,
 };
 
@@ -137,7 +138,10 @@ export function AdminLayout() {
               DASHIBODI
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <ThemeToggle />
+          </div>
         </div>
         <nav className="flex flex-col gap-2">
           {visibleNavItems.map((item) => (
@@ -249,6 +253,7 @@ export function AdminLayout() {
             >
               <User size={16} />
             </NavLink>
+            <NotificationBell />
             <ThemeToggle />
             <button
               type="button"

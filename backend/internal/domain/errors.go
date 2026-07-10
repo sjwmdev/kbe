@@ -23,3 +23,14 @@ var ErrForbidden = errors.New("forbidden")
 // products assigned to it — a product without a category is a broken UI
 // state, so this is blocked rather than silently nulling/cascading.
 var ErrCategoryInUse = errors.New("category is still in use by one or more products")
+
+// ErrProductInUse is returned when permanently deleting a product that still
+// has order history — financial/order records must not lose their product
+// reference, so hard delete is blocked (soft delete/hide remains available).
+var ErrProductInUse = errors.New("product cannot be permanently deleted because it has order history")
+
+// ErrInsufficientStock is returned when an order would decrement a
+// product's stock below zero — checked both ahead of time (usecase) and
+// atomically at write time (repository), the latter closing the race where
+// two concurrent orders both pass the ahead-of-time check.
+var ErrInsufficientStock = errors.New("insufficient stock")

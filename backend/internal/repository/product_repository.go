@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"backend/internal/domain"
@@ -21,10 +22,10 @@ func NewProductRepository(pool *pgxpool.Pool) domain.ProductRepository {
 }
 
 // FindAllActive is the paginated public product listing for one business.
-// categoryID nil means no filter. Mirrors FindAll below (COUNT(*) OVER() for
-// the total in one round trip) — the public catalog can grow just as the
-// admin inventory can.
-func (r *productRepository) FindAllActive(ctx context.Context, businessID uuid.UUID, categoryID *uuid.UUID, page, pageSize int) ([]domain.Product, int, error) {
+// filter's fields are each optional — nil/empty means no filter on that
+// dimension. Mirrors FindAll below (COUNT(*) OVER() for the total in one
+// round trip) — the public catalog can grow just as the admin inventory can.
+func (r *productRepository) FindAllActive(ctx context.Context, businessID uuid.UUID, filter domain.ProductFilter, page, pageSize int) ([]domain.Product, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -36,7 +37,7 @@ func (r *productRepository) FindAllActive(ctx context.Context, businessID uuid.U
 	query := `
 		SELECT
 			p.id, p.business_id, p.name, p.description, p.price, p.category_id, p.is_active,
-			p.stock_quantity, p.low_stock_threshold, p.created_by,
+			p.stock_quantity, p.low_stock_threshold, p.colors, p.created_by,
 			p.created_at, p.updated_at,
 			c.name, c.slug,
 			pi.id, pi.image_url, pi.is_primary,
@@ -48,11 +49,23 @@ func (r *productRepository) FindAllActive(ctx context.Context, businessID uuid.U
 		LEFT JOIN product_likes pl ON pl.product_id = p.id
 		WHERE p.business_id = $1 AND p.is_active = true`
 
-	args := make([]any, 1, 4)
+	args := make([]any, 1, 8)
 	args[0] = businessID
-	if categoryID != nil {
-		args = append(args, *categoryID)
+	if filter.CategoryID != nil {
+		args = append(args, *filter.CategoryID)
 		query += fmt.Sprintf(` AND p.category_id = $%d`, len(args))
+	}
+	if filter.Color != nil {
+		args = append(args, *filter.Color)
+		query += fmt.Sprintf(` AND $%d = ANY(p.colors)`, len(args))
+	}
+	if filter.MinPrice != nil {
+		args = append(args, *filter.MinPrice)
+		query += fmt.Sprintf(` AND p.price >= $%d`, len(args))
+	}
+	if filter.MaxPrice != nil {
+		args = append(args, *filter.MaxPrice)
+		query += fmt.Sprintf(` AND p.price <= $%d`, len(args))
 	}
 	query += fmt.Sprintf(` ORDER BY p.created_at DESC LIMIT $%d OFFSET $%d`, len(args)+1, len(args)+2)
 	args = append(args, pageSize, offset)
@@ -73,7 +86,7 @@ func (r *productRepository) FindAllActive(ctx context.Context, businessID uuid.U
 
 		if err := rows.Scan(
 			&p.ID, &p.BusinessID, &p.Name, &p.Description, &p.Price, &p.CategoryID, &p.IsActive,
-			&p.StockQuantity, &p.LowStockThreshold, &p.CreatedBy,
+			&p.StockQuantity, &p.LowStockThreshold, &p.Colors, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt,
 			&p.CategoryName, &p.CategorySlug,
 			&imgID, &imgURL, &imgPrimary,
@@ -193,22 +206,25 @@ func (r *productRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain
 	const query = `
 		SELECT
 			p.id, p.business_id, p.name, p.description, p.price, p.category_id, p.is_active,
-			p.stock_quantity, p.low_stock_threshold, p.created_by,
+			p.stock_quantity, p.low_stock_threshold, p.colors, p.created_by,
 			p.created_at, p.updated_at,
 			c.name, c.slug,
-			COALESCE(pl.likes_count, 0)
+			COALESCE(pl.likes_count, 0),
+			COALESCE(u.name, '')
 		FROM products p
 		JOIN categories c ON c.id = p.category_id
 		LEFT JOIN product_likes pl ON pl.product_id = p.id
+		LEFT JOIN users u ON u.id = p.created_by
 		WHERE p.id = $1`
 
 	var p domain.Product
 	err := r.pool.QueryRow(ctx, query, id).Scan(
 		&p.ID, &p.BusinessID, &p.Name, &p.Description, &p.Price, &p.CategoryID, &p.IsActive,
-		&p.StockQuantity, &p.LowStockThreshold, &p.CreatedBy,
+		&p.StockQuantity, &p.LowStockThreshold, &p.Colors, &p.CreatedBy,
 		&p.CreatedAt, &p.UpdatedAt,
 		&p.CategoryName, &p.CategorySlug,
 		&p.LikeCount,
+		&p.CreatedByName,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -222,13 +238,13 @@ func (r *productRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain
 
 func (r *productRepository) Create(ctx context.Context, product *domain.Product) error {
 	const query = `
-		INSERT INTO products (business_id, name, description, price, category_id, is_active, stock_quantity, low_stock_threshold, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO products (business_id, name, description, price, category_id, is_active, stock_quantity, low_stock_threshold, colors, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`
 
 	err := r.pool.QueryRow(ctx, query,
 		product.BusinessID, product.Name, product.Description, product.Price, product.CategoryID, product.IsActive,
-		product.StockQuantity, product.LowStockThreshold, product.CreatedBy,
+		product.StockQuantity, product.LowStockThreshold, product.Colors, product.CreatedBy,
 	).Scan(&product.ID, &product.CreatedAt, &product.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("repository: create product: %w", err)
@@ -241,13 +257,13 @@ func (r *productRepository) Update(ctx context.Context, product *domain.Product)
 	const query = `
 		UPDATE products
 		SET name = $1, description = $2, price = $3, category_id = $4, is_active = $5,
-			stock_quantity = $6, low_stock_threshold = $7, updated_at = now()
-		WHERE id = $8
+			stock_quantity = $6, low_stock_threshold = $7, colors = $8, updated_at = now()
+		WHERE id = $9
 		RETURNING updated_at`
 
 	err := r.pool.QueryRow(ctx, query,
 		product.Name, product.Description, product.Price, product.CategoryID, product.IsActive,
-		product.StockQuantity, product.LowStockThreshold, product.ID,
+		product.StockQuantity, product.LowStockThreshold, product.Colors, product.ID,
 	).Scan(&product.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("repository: update product: %w", domain.ErrNotFound)
@@ -268,6 +284,38 @@ func (r *productRepository) SoftDelete(ctx context.Context, id uuid.UUID) error 
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("repository: soft delete product: %w", domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+func (r *productRepository) Restore(ctx context.Context, id uuid.UUID) error {
+	const query = `UPDATE products SET is_active = true, updated_at = now() WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("repository: restore product: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("repository: restore product: %w", domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+func (r *productRepository) HardDelete(ctx context.Context, id uuid.UUID) error {
+	const query = `DELETE FROM products WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, query, id)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation {
+		return domain.ErrProductInUse
+	}
+	if err != nil {
+		return fmt.Errorf("repository: hard delete product: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("repository: hard delete product: %w", domain.ErrNotFound)
 	}
 
 	return nil

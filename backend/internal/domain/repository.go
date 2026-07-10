@@ -13,6 +13,10 @@ type UserRepository interface {
 	// unique system-wide (see users_email_unique) and login itself doesn't
 	// carry a tenant identifier in phase 1 of the multi-tenant retrofit.
 	FindByEmail(ctx context.Context, email string) (*User, error)
+	// FindByUsername is global for the same reason as FindByEmail — username
+	// is unique system-wide (users_username_key) and the forgot-password form
+	// accepts either identifier without knowing the tenant.
+	FindByUsername(ctx context.Context, username string) (*User, error)
 	FindByID(ctx context.Context, id, businessID uuid.UUID) (*User, error)
 	FindAll(ctx context.Context, businessID uuid.UUID) ([]User, error)
 	CountActiveByRole(ctx context.Context, roleID, businessID uuid.UUID) (int, error)
@@ -30,11 +34,12 @@ type UserRepository interface {
 
 // ProductRepository is the port for product persistence.
 type ProductRepository interface {
-	// FindAllActive is the public product listing page for one business:
-	// categoryID nil means no filter. Paginated the same way as FindAll
-	// below, for the same reason — a growing catalog shouldn't mean an
-	// ever-larger single response.
-	FindAllActive(ctx context.Context, businessID uuid.UUID, categoryID *uuid.UUID, page, pageSize int) ([]Product, int, error)
+	// FindAllActive is the public product listing page for one business.
+	// categoryID, color, minPrice, maxPrice nil/empty means no filter on
+	// that dimension. Paginated the same way as FindAll below, for the same
+	// reason — a growing catalog shouldn't mean an ever-larger single
+	// response.
+	FindAllActive(ctx context.Context, businessID uuid.UUID, filter ProductFilter, page, pageSize int) ([]Product, int, error)
 	// FindAll is the admin inventory listing, always scoped to businessID;
 	// createdBy nil additionally means "no ownership filter within this
 	// business" (SuperAdmin sees everything in their own tenant), non-nil
@@ -50,6 +55,13 @@ type ProductRepository interface {
 	Create(ctx context.Context, product *Product) error
 	Update(ctx context.Context, product *Product) error
 	SoftDelete(ctx context.Context, id uuid.UUID) error
+	// Restore reverses SoftDelete (is_active = true) — undoes a mistaken hide.
+	Restore(ctx context.Context, id uuid.UUID) error
+	// HardDelete permanently removes the product row. Fails with
+	// ErrProductInUse if any order_items still reference it (the FK has no
+	// ON DELETE clause, so it defaults to RESTRICT) — order/financial history
+	// must never lose its product reference.
+	HardDelete(ctx context.Context, id uuid.UUID) error
 }
 
 // ProductImageRepository is the port for product image persistence.
@@ -64,6 +76,9 @@ type ProductImageRepository interface {
 // ProductLikeRepository is the port for product like-count persistence.
 type ProductLikeRepository interface {
 	Increment(ctx context.Context, productID uuid.UUID) (int, error)
+	// Decrement never takes the count below zero — an unlike on a product
+	// with no counter row yet (or already at zero) is a harmless no-op.
+	Decrement(ctx context.Context, productID uuid.UUID) (int, error)
 }
 
 // SettingsRepository is the port for one business's settings row.
@@ -196,6 +211,10 @@ type OrderRepository interface {
 	// sold (descending) within non-cancelled orders since the given time,
 	// always scoped to businessID.
 	TopProductPerformance(ctx context.Context, businessID uuid.UUID, createdBy *uuid.UUID, since time.Time, limit int) ([]ProductPerformance, error)
+	// ProductOrderSummary aggregates all non-cancelled order history for one
+	// product, always scoped to businessID — backs the admin product details
+	// page's "orders related to this product" section.
+	ProductOrderSummary(ctx context.Context, businessID, productID uuid.UUID) (ProductOrderSummary, error)
 }
 
 // BusinessRepository is the port for tenant (business) persistence. This is
@@ -206,6 +225,32 @@ type BusinessRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*Business, error)
 	FindBySlug(ctx context.Context, slug string) (*Business, error)
 	FindAll(ctx context.Context) ([]Business, error)
+}
+
+// NotificationRepository is the port for dashboard notifications.
+type NotificationRepository interface {
+	Create(ctx context.Context, notification *Notification) error
+	// List returns one page of notifications (newest first) matching the
+	// filter, plus the total matching count, always scoped to businessID.
+	List(ctx context.Context, businessID uuid.UUID, filter NotificationFilter, page, pageSize int) ([]Notification, int, error)
+	CountUnread(ctx context.Context, businessID uuid.UUID) (int, error)
+	MarkRead(ctx context.Context, id, businessID uuid.UUID) error
+	// Delete permanently removes one notification (gated behind
+	// notifications.manage at the router level).
+	Delete(ctx context.Context, id, businessID uuid.UUID) error
+	// Clear deletes every notification for businessID (SuperAdmin-only action
+	// at the handler level, mirrors AuditLogRepository.Clear).
+	Clear(ctx context.Context, businessID uuid.UUID) error
+	// FindUnresolvedByReference looks up an existing unresolved notification
+	// for the same category+reference — the dedup check that stops a
+	// low-stock alert (or any future reference-based category) from being
+	// recreated on every single order while the underlying issue persists.
+	FindUnresolvedByReference(ctx context.Context, businessID uuid.UUID, category string, referenceID uuid.UUID) (*Notification, error)
+	// ResolveByReference marks every open notification for that
+	// category+reference as read+resolved — e.g. once an admin actually
+	// resets a password, the request notification that prompted it is done.
+	// Resolving zero rows is not an error.
+	ResolveByReference(ctx context.Context, businessID uuid.UUID, category string, referenceID uuid.UUID) error
 }
 
 // CategoryRepository is the port for a business's own product categories

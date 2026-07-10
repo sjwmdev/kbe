@@ -39,6 +39,9 @@ const ProductsPage = lazy(() =>
 const ProductFormPage = lazy(() =>
   import("./pages/admin/ProductFormPage").then((m) => ({ default: m.ProductFormPage })),
 );
+const ProductDetailsPage = lazy(() =>
+  import("./pages/admin/ProductDetailsPage").then((m) => ({ default: m.ProductDetailsPage })),
+);
 const StaticPagesPage = lazy(() =>
   import("./pages/admin/StaticPagesPage").then((m) => ({ default: m.StaticPagesPage })),
 );
@@ -71,6 +74,11 @@ const OrdersPage = lazy(() =>
 );
 const OrderFormPage = lazy(() =>
   import("./pages/admin/OrderFormPage").then((m) => ({ default: m.OrderFormPage })),
+);
+const NotificationsPage = lazy(() =>
+  import("./pages/admin/NotificationsPage").then((m) => ({
+    default: m.NotificationsPage,
+  })),
 );
 
 function AdminLoadingFallback() {
@@ -122,6 +130,7 @@ function App() {
                       <Route index element={<DashboardPage />} />
                       <Route path="products" element={<ProductsPage />} />
                       <Route path="products/new" element={<ProductFormPage />} />
+                      <Route path="products/:id" element={<ProductDetailsPage />} />
                       <Route
                         path="products/:id/edit"
                         element={<ProductFormPage />}
@@ -137,6 +146,10 @@ function App() {
                       <Route path="audit-logs" element={<AuditLogsPage />} />
                       <Route path="orders" element={<OrdersPage />} />
                       <Route path="orders/new" element={<OrderFormPage />} />
+                      <Route
+                        path="notifications"
+                        element={<NotificationsPage />}
+                      />
                       <Route path="*" element={<NotFoundPage />} />
                     </Route>
                   </Route>

@@ -7,22 +7,24 @@ import (
 )
 
 type RouterDeps struct {
-	ProductHandler   *ProductHandler
-	AuthHandler      *AuthHandler
-	UploadHandler    *UploadHandler
-	ContentHandler   *ContentHandler
-	RoleHandler      *RoleHandler
-	UserHandler      *UserHandler
-	MediaHandler     *MediaHandler
-	AuditLogHandler  *AuditLogHandler
-	OrderHandler     *OrderHandler
-	DashboardHandler *DashboardHandler
-	CategoryHandler  *CategoryHandler
-	RoleUsecase      *usecase.RoleUsecase
-	AuditLogUsecase  *usecase.AuditLogUsecase
-	TokenManager     *TokenManager
-	UploadsDir       string
-	AllowedOrigin    string
+	ProductHandler      *ProductHandler
+	AuthHandler         *AuthHandler
+	UploadHandler       *UploadHandler
+	ContentHandler      *ContentHandler
+	RoleHandler         *RoleHandler
+	UserHandler         *UserHandler
+	MediaHandler        *MediaHandler
+	AuditLogHandler     *AuditLogHandler
+	OrderHandler        *OrderHandler
+	DashboardHandler    *DashboardHandler
+	CategoryHandler     *CategoryHandler
+	NotificationHandler *NotificationHandler
+	TemplateHandler     *MessageTemplateHandler
+	RoleUsecase         *usecase.RoleUsecase
+	AuditLogUsecase     *usecase.AuditLogUsecase
+	TokenManager        *TokenManager
+	UploadsDir          string
+	AllowedOrigin       string
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -36,7 +38,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.HandleFunc("GET /api/v1/products", deps.ProductHandler.List)
 	mux.HandleFunc("GET /api/v1/products/{id}", deps.ProductHandler.Get)
 	mux.HandleFunc("POST /api/v1/products/{id}/like", deps.ProductHandler.Like)
+	mux.HandleFunc("DELETE /api/v1/products/{id}/like", deps.ProductHandler.Unlike)
 	mux.HandleFunc("POST /api/v1/admin/login", deps.AuthHandler.Login)
+	mux.HandleFunc("POST /api/v1/admin/forgot-password", deps.AuthHandler.ForgotPassword)
 	mux.HandleFunc("GET /api/v1/settings", deps.ContentHandler.GetSettings)
 	mux.HandleFunc("GET /api/v1/pages/{slug}", deps.ContentHandler.GetPage)
 	mux.HandleFunc("GET /api/v1/sliders", deps.ContentHandler.ListActiveSliders)
@@ -66,6 +70,13 @@ func NewRouter(deps RouterDeps) http.Handler {
 		return requireAuth(auditLog(RequirePasswordChanged(RequirePermission(deps.RoleUsecase, permKey)(h))))
 	}
 
+	// protectAny: same chain as protect, but passes when the role holds ANY
+	// of the listed keys — for routes shared by two modules (product-image
+	// endpoints belong to product management as much as the media library).
+	protectAny := func(h http.HandlerFunc, permKeys ...string) http.Handler {
+		return requireAuth(auditLog(RequirePasswordChanged(RequirePermission(deps.RoleUsecase, permKeys...)(h))))
+	}
+
 	// superAdminOnly: authenticated + audit-logged, but gated by a hard
 	// role-name check instead of a grantable permission key — used only for
 	// the audit log routes themselves (see RequireSuperAdmin).
@@ -74,11 +85,18 @@ func NewRouter(deps RouterDeps) http.Handler {
 	}
 
 	mux.Handle("GET /api/v1/admin/products", protect("products.view", deps.ProductHandler.ListAll))
+	mux.Handle("GET /api/v1/admin/products/{id}", protect("products.view", deps.ProductHandler.GetAdminDetail))
 	mux.Handle("POST /api/v1/admin/products", protect("products.create", deps.ProductHandler.Create))
 	mux.Handle("PUT /api/v1/admin/products/{id}", protect("products.edit", deps.ProductHandler.Update))
 	mux.Handle("DELETE /api/v1/admin/products/{id}", protect("products.delete", deps.ProductHandler.Delete))
-	mux.Handle("POST /api/v1/admin/products/{id}/images", protect("media.upload", deps.UploadHandler.Upload))
-	mux.Handle("DELETE /api/v1/admin/images/{id}", protect("media.delete", deps.UploadHandler.DeleteImage))
+	mux.Handle("PUT /api/v1/admin/products/{id}/restore", protect("products.restore", deps.ProductHandler.Restore))
+	mux.Handle("DELETE /api/v1/admin/products/{id}/force", protect("products.forceDelete", deps.ProductHandler.ForceDelete))
+	// Product-image attach/detach is part of managing a product, not just
+	// the media library — a role that can create or edit products must be
+	// able to give them images without also holding media.* grants (the
+	// handler still enforces the product belongs to the caller's business).
+	mux.Handle("POST /api/v1/admin/products/{id}/images", protectAny(deps.UploadHandler.Upload, "media.upload", "products.create", "products.edit"))
+	mux.Handle("DELETE /api/v1/admin/images/{id}", protectAny(deps.UploadHandler.DeleteImage, "media.delete", "products.edit", "products.create"))
 	mux.Handle("PUT /api/v1/admin/settings", protect("settings.edit", deps.ContentHandler.UpdateSettings))
 	mux.Handle("GET /api/v1/admin/pages", protect("pages.view", deps.ContentHandler.ListPages))
 	mux.Handle("PUT /api/v1/admin/pages/{slug}", protect("pages.edit", deps.ContentHandler.UpdatePage))
@@ -105,6 +123,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.Handle("PUT /api/v1/admin/users/{id}", protect("users.edit", deps.UserHandler.UpdateUser))
 	mux.Handle("DELETE /api/v1/admin/users/{id}", protect("users.delete", deps.UserHandler.DeleteUser))
 	mux.Handle("PUT /api/v1/admin/users/{id}/active", protect("users.edit", deps.UserHandler.SetActive))
+	mux.Handle("POST /api/v1/admin/users/{id}/reset-password", protect("users.resetPassword", deps.UserHandler.ResetPassword))
 
 	mux.Handle("GET /api/v1/admin/media/folders", protect("media.view", deps.MediaHandler.ListFolders))
 	mux.Handle("POST /api/v1/admin/media/folders", protect("media.upload", deps.MediaHandler.CreateFolder))
@@ -121,10 +140,23 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.Handle("POST /api/v1/admin/orders", protect("orders.create", deps.OrderHandler.Create))
 	mux.Handle("PUT /api/v1/admin/orders/{id}/status", protect("orders.edit", deps.OrderHandler.UpdateStatus))
 
-	mux.Handle("GET /api/v1/admin/categories", protect("categories.view", deps.CategoryHandler.ListAdmin))
+	// Reading category names requires only authentication, not
+	// categories.view: the product create/edit form needs the list to fill
+	// its category select, and a role allowed to create products may well
+	// not manage categories. The names are business-scoped via the JWT
+	// claims inside ListAdmin (and are public on the storefront anyway);
+	// creating/editing/deleting categories stays permission-gated below.
+	mux.Handle("GET /api/v1/admin/categories", selfServiceGated(deps.CategoryHandler.ListAdmin))
 	mux.Handle("POST /api/v1/admin/categories", protect("categories.create", deps.CategoryHandler.Create))
 	mux.Handle("PUT /api/v1/admin/categories/{id}", protect("categories.edit", deps.CategoryHandler.Update))
 	mux.Handle("DELETE /api/v1/admin/categories/{id}", protect("categories.delete", deps.CategoryHandler.Delete))
+
+	mux.Handle("GET /api/v1/admin/notifications", protect("notifications.view", deps.NotificationHandler.List))
+	mux.Handle("GET /api/v1/admin/notifications/unread-count", protect("notifications.view", deps.NotificationHandler.CountUnread))
+	mux.Handle("PUT /api/v1/admin/notifications/{id}/read", protect("notifications.view", deps.NotificationHandler.MarkRead))
+	mux.Handle("DELETE /api/v1/admin/notifications", protect("notifications.manage", deps.NotificationHandler.Clear))
+	mux.Handle("DELETE /api/v1/admin/notifications/{id}", protect("notifications.manage", deps.NotificationHandler.Delete))
+	mux.Handle("GET /api/v1/admin/message-templates", protect("notifications.view", deps.TemplateHandler.List))
 
 	// No permission key — the "Muhtasari" dashboard nav item itself is
 	// visible to every authenticated role, so its data follows suit.

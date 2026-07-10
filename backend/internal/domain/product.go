@@ -12,6 +12,33 @@ const (
 	StockStatusInStock    = "in_stock"
 )
 
+// ValidProductColors is the fixed catalog of selectable product colors —
+// deliberately a closed list (not free text) so the public color filter
+// always matches real, consistent values.
+var ValidProductColors = []string{
+	"Black", "White", "Blue", "Green", "Brown", "Yellow", "Red", "Pink",
+	"Gold", "Rose Gold", "Beige", "Nude", "Cream", "Silver",
+}
+
+// IsValidProductColor reports whether color is one of ValidProductColors.
+func IsValidProductColor(color string) bool {
+	for _, c := range ValidProductColors {
+		if c == color {
+			return true
+		}
+	}
+	return false
+}
+
+// ProductFilter carries the public catalog's optional filter dimensions —
+// each nil field means "no filter" on that dimension.
+type ProductFilter struct {
+	CategoryID *uuid.UUID
+	Color      *string
+	MinPrice   *float64
+	MaxPrice   *float64
+}
+
 type Product struct {
 	ID                uuid.UUID
 	BusinessID        uuid.UUID
@@ -22,15 +49,17 @@ type Product struct {
 	IsActive          bool
 	StockQuantity     int
 	LowStockThreshold int
+	Colors            []string
 	CreatedBy         *uuid.UUID
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 
 	// Populated by joins, not persisted directly on the products table.
-	Images       []ProductImage
-	LikeCount    int
-	CategoryName string
-	CategorySlug string
+	Images        []ProductImage
+	LikeCount     int
+	CategoryName  string
+	CategorySlug  string
+	CreatedByName string
 }
 
 // StockStatus classifies the product's current stock level. Single source of

@@ -144,13 +144,19 @@ export function ProductDetailPage() {
           </div>
 
           {product.description && (
-            <p className="whitespace-pre-line leading-relaxed text-ink-muted">
-              {product.description}
-            </p>
+            // Server-sanitized HTML (see backend's SanitizeDescriptionHTML) —
+            // safe to render directly, never raw user input.
+            <div
+              className="leading-relaxed text-ink-muted [&_a]:text-brand-accent [&_a]:underline [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-ink [&_li]:ml-5 [&_ol]:list-decimal [&_ul]:list-disc"
+              dangerouslySetInnerHTML={{ __html: product.description }}
+            />
           )}
 
           <div className="mt-4">
-            <WhatsAppButton productName={product.name} />
+            <WhatsAppButton
+              productName={product.name}
+              disabled={product.stock_status === "out_of_stock"}
+            />
           </div>
         </div>
       </div>
